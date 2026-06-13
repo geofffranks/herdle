@@ -58,6 +58,9 @@ type Engine struct {
 	GH        vcs.GHRunner
 	TK        vcs.TKRunner
 	DirExists func(path string) bool
+	// Glob abstracts filepath.Glob so disk-touching gather (lifecycle derivation,
+	// design-artifact scan) is testable; when nil it defaults to filepath.Glob.
+	Glob func(pattern string) ([]string, error)
 }
 
 func (e Engine) dirExists(path string) bool {

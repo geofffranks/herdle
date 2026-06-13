@@ -1,0 +1,23 @@
+### herdle   (/home/u/herdle)
+
+— git —  main
+
+— open PRs —
+  #7     fix/7-x                        a fix                                     [her-aaaa]  ✓ in sync
+
+— merged PRs needing cleanup —
+  #6     old                            merged thing                              ⚠ local branch
+
+— work in progress (in-flight tk + branches, not in a PR) —
+  state               sync tk        branch                         feature                                  issues
+  in-development      ✗    her-bbbb  feature-y                      the feature                              ↑1 unpushed
+  -                   ·    -         orphan                                                                  no tk
+
+— up next (open tk, not started) —
+  planned             her-cccc  P2 next up
+
+— design artifacts (specs / plans / validation) —
+  her-aaaa  specs  2026-06-13-her-aaaa-x-design.md
+
+sync: ✓ local==origin · ✗ differs (see issues) · · n/a — merged-PR & upstream-gone branches hidden, origin auto-pruned
+lifecycle: - (not started) → designed → planned → in-development → pending-validation → validated

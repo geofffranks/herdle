@@ -45,12 +45,13 @@ var _ = Describe("herdle --all (summary)", func() {
 		Expect(buf.String()).To(ContainSubstring("(fetched)"))
 	})
 
-	It("treats a named project as a drilldown (S5 stub)", func() {
+	It("errors on an unknown named project", func() {
+		GinkgoT().Setenv("HERDLE_CONFIG", filepath.Join(GinkgoT().TempDir(), "none.toml"))
 		buf := &bytes.Buffer{}
 		app := newApp()
 		app.Writer = buf
 		err := app.Run([]string{"herdle", "someproject"})
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("not implemented"))
+		Expect(err.Error()).To(ContainSubstring(`no project named "someproject"`))
 	})
 })

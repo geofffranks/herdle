@@ -17,3 +17,6 @@ test: lint
 
 build: lint
 	go build $(LDFLAGS) ./cmd/herdle
+
+generate:
+	go generate ./...

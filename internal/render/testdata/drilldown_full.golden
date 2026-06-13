@@ -19,5 +19,5 @@
 — design artifacts (specs / plans / validation) —
   her-aaaa  specs  2026-06-13-her-aaaa-x-design.md
 
-sync: ✓ local==origin · ✗ differs (see issues) · · n/a — merged-PR & upstream-gone branches hidden, origin auto-pruned
+sync: ✓ local==remote · ✗ differs (see issues) · · n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned
 lifecycle: - (not started) → designed → planned → in-development → pending-validation → validated

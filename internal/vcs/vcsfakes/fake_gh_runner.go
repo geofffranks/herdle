@@ -8,6 +8,26 @@ import (
 )
 
 type FakeGHRunner struct {
+	AvailableStub        func() bool
+	availableMutex       sync.RWMutex
+	availableArgsForCall []struct {
+	}
+	availableReturns struct {
+		result1 bool
+	}
+	availableReturnsOnCall map[int]struct {
+		result1 bool
+	}
+	KnownHostsStub        func() []string
+	knownHostsMutex       sync.RWMutex
+	knownHostsArgsForCall []struct {
+	}
+	knownHostsReturns struct {
+		result1 []string
+	}
+	knownHostsReturnsOnCall map[int]struct {
+		result1 []string
+	}
 	PRListStub        func(string, string) ([]vcs.PR, error)
 	pRListMutex       sync.RWMutex
 	pRListArgsForCall []struct {
@@ -24,6 +44,112 @@ type FakeGHRunner struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeGHRunner) Available() bool {
+	fake.availableMutex.Lock()
+	ret, specificReturn := fake.availableReturnsOnCall[len(fake.availableArgsForCall)]
+	fake.availableArgsForCall = append(fake.availableArgsForCall, struct {
+	}{})
+	stub := fake.AvailableStub
+	fakeReturns := fake.availableReturns
+	fake.recordInvocation("Available", []interface{}{})
+	fake.availableMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeGHRunner) AvailableCallCount() int {
+	fake.availableMutex.RLock()
+	defer fake.availableMutex.RUnlock()
+	return len(fake.availableArgsForCall)
+}
+
+func (fake *FakeGHRunner) AvailableCalls(stub func() bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = stub
+}
+
+func (fake *FakeGHRunner) AvailableReturns(result1 bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = nil
+	fake.availableReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeGHRunner) AvailableReturnsOnCall(i int, result1 bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = nil
+	if fake.availableReturnsOnCall == nil {
+		fake.availableReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.availableReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeGHRunner) KnownHosts() []string {
+	fake.knownHostsMutex.Lock()
+	ret, specificReturn := fake.knownHostsReturnsOnCall[len(fake.knownHostsArgsForCall)]
+	fake.knownHostsArgsForCall = append(fake.knownHostsArgsForCall, struct {
+	}{})
+	stub := fake.KnownHostsStub
+	fakeReturns := fake.knownHostsReturns
+	fake.recordInvocation("KnownHosts", []interface{}{})
+	fake.knownHostsMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeGHRunner) KnownHostsCallCount() int {
+	fake.knownHostsMutex.RLock()
+	defer fake.knownHostsMutex.RUnlock()
+	return len(fake.knownHostsArgsForCall)
+}
+
+func (fake *FakeGHRunner) KnownHostsCalls(stub func() []string) {
+	fake.knownHostsMutex.Lock()
+	defer fake.knownHostsMutex.Unlock()
+	fake.KnownHostsStub = stub
+}
+
+func (fake *FakeGHRunner) KnownHostsReturns(result1 []string) {
+	fake.knownHostsMutex.Lock()
+	defer fake.knownHostsMutex.Unlock()
+	fake.KnownHostsStub = nil
+	fake.knownHostsReturns = struct {
+		result1 []string
+	}{result1}
+}
+
+func (fake *FakeGHRunner) KnownHostsReturnsOnCall(i int, result1 []string) {
+	fake.knownHostsMutex.Lock()
+	defer fake.knownHostsMutex.Unlock()
+	fake.KnownHostsStub = nil
+	if fake.knownHostsReturnsOnCall == nil {
+		fake.knownHostsReturnsOnCall = make(map[int]struct {
+			result1 []string
+		})
+	}
+	fake.knownHostsReturnsOnCall[i] = struct {
+		result1 []string
+	}{result1}
 }
 
 func (fake *FakeGHRunner) PRList(arg1 string, arg2 string) ([]vcs.PR, error) {

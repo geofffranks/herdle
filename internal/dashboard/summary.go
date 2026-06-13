@@ -4,12 +4,15 @@ import "github.com/geofffranks/herdle/internal/config"
 
 // Summary gathers one SummaryRow per configured project, in config file order,
 // mirroring wip's summary(). Projects whose path does not exist on disk are
-// skipped: wip's loader admits only existing dirs (`[ -d "$path" ]`), whereas
-// herdle's config keeps every configured project, so skipping here is what makes
-// `herdle --all` match `wip --all` row-for-row. When fetch is true each surviving
-// project is git-fetched first (best-effort, like wip's `2>/dev/null`).
-func (e Engine) Summary(cfg *config.Config, fetch bool) ([]SummaryRow, error) {
+// skipped. gh availability and the known GitHub hosts are resolved once; PR cells
+// degrade to "-" (PRNoSlug) when gh is absent or the remote is not a GitHub host,
+// so no "?" appears in those cases. When fetch is true each surviving project is
+// git-fetched first (best-effort).
+func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
+	ghAvail := e.GH.Available()
+	known := e.knownGitHubHosts()
 	var rows []SummaryRow
+	anyGitHub := false
 	for _, p := range cfg.Projects {
 		if !e.dirExists(p.Path) {
 			continue
@@ -18,14 +21,20 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) ([]SummaryRow, error) {
 			_ = e.Git.Fetch(p.Path)
 		}
 		r, _ := cfg.Resolve(p, e.Git) // error reserved for future hard failures
+		slug, isGitHub := effectiveSlug(r, known)
+		if isGitHub {
+			anyGitHub = true
+		}
 		rows = append(rows, SummaryRow{
 			Name: r.Name,
 			Head: e.head(p.Path),
-			PR:   e.prCell(r.Slug),
+			PR:   e.prCell(slug, isGitHub, ghAvail),
 			TK:   e.tkCell(p.Path),
 		})
 	}
-	return rows, nil
+	// Note gh-absence only when at least one project is a GitHub remote that would
+	// otherwise show PR counts; with no GitHub projects the note would be spurious.
+	return SummaryResult{Rows: rows, GHAbsent: !ghAvail && anyGitHub}, nil
 }
 
 // head mirrors wip's git_head.
@@ -42,9 +51,11 @@ func (e Engine) head(path string) HeadInfo {
 	return h
 }
 
-// prCell mirrors wip's pr_count.
-func (e Engine) prCell(slug string) PRCell {
-	if slug == "" {
+// prCell mirrors wip's pr_count, extended for graceful degradation: when gh is
+// absent or the project has no GitHub remote, the cell is PRNoSlug ("-") and gh
+// is not called. A GitHub project whose gh call fails is PRUnknown ("?").
+func (e Engine) prCell(slug string, isGitHub, ghAvail bool) PRCell {
+	if !ghAvail || !isGitHub || slug == "" {
 		return PRCell{State: PRNoSlug}
 	}
 	prs, err := e.GH.PRList(slug, "open")

@@ -16,9 +16,10 @@ const (
 )
 
 // Summary writes wip's cross-project summary layout for rows to w. The view is
-// monochrome — wip's summary() emits no ANSI — so no DetectColor call is needed
-// here; fetched selects the footer note.
-func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched bool) error {
+// monochrome (wip's summary() emits no ANSI). fetched selects the cache/fetch
+// footer note; ghAbsent appends a note that PR counts are hidden because the gh
+// binary was not found.
+func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched, ghAbsent bool) error {
 	out := &errWriter{w: w}
 	out.line(row("PROJECT", "BRANCH", "PRs", "tk(ip/ready)"))
 	out.line(row("-------", "------", "---", "------------"))
@@ -29,8 +30,12 @@ func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched bool) error {
 	if fetched {
 		note = "fetched"
 	}
+	footer := "(" + note + `)  tk = in-progress/ready · run "herdle <name>" for detail`
+	if ghAbsent {
+		footer += " · gh not found — PR counts hidden"
+	}
 	out.line("")
-	out.line("(" + note + `)  tk = in-progress/ready · run "herdle <name>" for detail`)
+	out.line(footer)
 	return out.err
 }
 

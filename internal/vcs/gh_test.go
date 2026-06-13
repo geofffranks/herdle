@@ -74,3 +74,54 @@ echo '[]'
 		Expect(err).To(HaveOccurred())
 	})
 })
+
+var _ = Describe("GHRunner.Available", func() {
+	It("is true when HERDLE_GH points at an existing binary", func() {
+		ghStub("#!/bin/sh\nexit 0\n")
+		Expect(vcs.NewGHRunner().Available()).To(BeTrue())
+	})
+
+	It("is false when HERDLE_GH points at a missing path", func() {
+		os.Setenv("HERDLE_GH", filepath.Join(GinkgoT().TempDir(), "nope-gh"))
+		DeferCleanup(func() { os.Unsetenv("HERDLE_GH") })
+		Expect(vcs.NewGHRunner().Available()).To(BeFalse())
+	})
+
+	It("falls back to PATH when HERDLE_GH is unset", func() {
+		dir := GinkgoT().TempDir()
+		p := filepath.Join(dir, "gh")
+		Expect(os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755)).To(Succeed()) // #nosec G306 -- executable stub
+		GinkgoT().Setenv("HERDLE_GH", "")                                   // empty -> Available consults PATH
+		GinkgoT().Setenv("PATH", dir)
+		Expect(vcs.NewGHRunner().Available()).To(BeTrue())
+	})
+
+	It("is false when gh is on neither HERDLE_GH nor PATH", func() {
+		GinkgoT().Setenv("HERDLE_GH", "")
+		GinkgoT().Setenv("PATH", GinkgoT().TempDir()) // empty dir, no gh
+		Expect(vcs.NewGHRunner().Available()).To(BeFalse())
+	})
+})
+
+var _ = Describe("GHRunner.KnownHosts", func() {
+	writeHosts := func(body string) {
+		dir := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "hosts.yml"), []byte(body), 0o600)).To(Succeed())
+		GinkgoT().Setenv("GH_CONFIG_DIR", dir)
+	}
+
+	It("returns just github.com when hosts.yml is absent", func() {
+		GinkgoT().Setenv("GH_CONFIG_DIR", GinkgoT().TempDir()) // empty dir, no hosts.yml
+		Expect(vcs.NewGHRunner().KnownHosts()).To(Equal([]string{"github.com"}))
+	})
+
+	It("unions github.com with the top-level host keys", func() {
+		writeHosts("github.com:\n    user: x\ngithub.example.com:\n    user: y\n")
+		Expect(vcs.NewGHRunner().KnownHosts()).To(ConsistOf("github.com", "github.example.com"))
+	})
+
+	It("ignores indented child keys and comment lines", func() {
+		writeHosts("# a comment\ngithub.example.com:\n    oauth_token: abc\n    git_protocol: ssh\n")
+		Expect(vcs.NewGHRunner().KnownHosts()).To(ConsistOf("github.com", "github.example.com"))
+	})
+})

@@ -85,7 +85,7 @@ var _ = Describe("Engine PR sections", func() {
 			{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"},
 		}
 		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t1", ExternalRef: "gh-5"}})
-		rows := eng.OpenPRRowsForTest(prs, tickets, "/r")
+		rows := eng.OpenPRRowsForTest(prs, tickets, "/r", "origin")
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Number).To(Equal(5))
 		Expect(rows[0].TKs).To(Equal([]string{"t1"}))
@@ -97,7 +97,7 @@ var _ = Describe("Engine PR sections", func() {
 		git.RemoteBranchExistsReturns(true, nil) // origin branch lingers
 		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"}}
 		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t6", ExternalRef: "gh-6"}})
-		rows := eng.MergedCleanupRowsForTest(prs, tickets, "/r")
+		rows := eng.MergedCleanupRowsForTest(prs, tickets, "/r", "origin")
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Flags).To(Equal(dashboard.FlagNote{
 			Text: "⚠ local branch · ⚠ origin branch · ⚠ tk t6 open", Sev: dashboard.SevYellow,
@@ -106,7 +106,34 @@ var _ = Describe("Engine PR sections", func() {
 
 	It("drops merged PRs with no leftovers", func() {
 		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old"}}
-		Expect(eng.MergedCleanupRowsForTest(prs, nil, "/r")).To(BeEmpty())
+		Expect(eng.MergedCleanupRowsForTest(prs, nil, "/r", "origin")).To(BeEmpty())
+	})
+
+	It("threads the configured remote into the open-PR sync check", func() {
+		git.LocalBranchExistsReturns(true, nil) // past the "<remote> only" early return
+		prs := []vcs.PR{{Number: 5, State: "OPEN", HeadRefName: "feat", Title: "x"}}
+		_ = eng.OpenPRRowsForTest(prs, nil, "/r", "fork")
+		_, remote, _ := git.RemoteBranchExistsArgsForCall(0)
+		Expect(remote).To(Equal("fork"))
+	})
+
+	It("skips the remote-branch flag when no remote is configured", func() {
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"}}
+		rows := eng.MergedCleanupRowsForTest(prs, nil, "/r", "")
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0].Flags.Text).To(Equal("⚠ local branch")) // no remote-branch flag
+		Expect(git.RemoteBranchExistsCallCount()).To(Equal(0))
+	})
+
+	It("names the configured remote in the merged-cleanup flag", func() {
+		git.LocalBranchExistsReturns(false, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"}}
+		rows := eng.MergedCleanupRowsForTest(prs, nil, "/r", "fork")
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0].Flags.Text).To(Equal("⚠ fork branch"))
 	})
 })
 
@@ -119,7 +146,7 @@ var _ = Describe("Engine WIP section", func() {
 	BeforeEach(func() {
 		git = &vcsfakes.FakeGitRunner{}
 		eng = dashboard.Engine{Git: git}
-		r = config.Resolved{Path: "/r", Base: "dev", Integration: "geoff-main"}
+		r = config.Resolved{Path: "/r", Base: "dev", Integration: "geoff-main", Remote: "origin"}
 		git.LocalBranchExistsReturns(true, nil)
 		git.RemoteBranchExistsReturns(true, nil)
 		git.DivergenceReturns(0, 0, nil)
@@ -189,10 +216,11 @@ var _ = Describe("Engine.Drilldown", func() {
 		tk = &vcsfakes.FakeTKRunner{}
 		eng = dashboard.Engine{Git: git, GH: gh, TK: tk, Glob: func(string) ([]string, error) { return nil, nil }}
 		git.CurrentBranchReturns("main", nil)
+		gh.AvailableReturns(true)
 	})
 
-	It("prunes origin when not fetching and sets Fetched=false", func() {
-		d, err := eng.Drilldown(config.Resolved{Name: "r", Path: "/r"}, false)
+	It("prunes the configured remote when not fetching and sets Fetched=false", func() {
+		d, err := eng.Drilldown(config.Resolved{Name: "r", Path: "/r", Remote: "origin"}, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(d.Fetched).To(BeFalse())
 		Expect(git.PruneRemoteCallCount()).To(Equal(1))
@@ -200,6 +228,12 @@ var _ = Describe("Engine.Drilldown", func() {
 		Expect(p).To(Equal("/r"))
 		Expect(remote).To(Equal("origin"))
 		Expect(git.FetchCallCount()).To(Equal(0))
+	})
+
+	It("skips prune when there is no configured remote", func() {
+		_, err := eng.Drilldown(config.Resolved{Path: "/r"}, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(git.PruneRemoteCallCount()).To(Equal(0))
 	})
 
 	It("fetches when asked and sets Fetched=true", func() {
@@ -211,11 +245,13 @@ var _ = Describe("Engine.Drilldown", func() {
 
 	It("marks GHUnavailable when PRList errors (and skips gh without a slug)", func() {
 		gh.PRListReturns(nil, errors.New("gh down"))
-		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r"}, false)
+		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", SlugExplicit: true}, false)
 		Expect(d.HasSlug).To(BeTrue())
 		Expect(d.GHUnavailable).To(BeTrue())
+		Expect(d.GHAbsent).To(BeFalse())
 
 		gh2 := &vcsfakes.FakeGHRunner{}
+		gh2.AvailableReturns(true)
 		eng.GH = gh2
 		d2, _ := eng.Drilldown(config.Resolved{Path: "/r"}, false)
 		Expect(d2.HasSlug).To(BeFalse())
@@ -227,6 +263,33 @@ var _ = Describe("Engine.Drilldown", func() {
 		Expect(d.Name).To(Equal("herdle"))
 		Expect(d.Path).To(Equal("/r"))
 		Expect(d.Head.Branch).To(Equal("main"))
+	})
+
+	It("sets GHAbsent and skips gh entirely when gh is unavailable", func() {
+		gh.AvailableReturns(false)
+		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", SlugExplicit: true}, false)
+		Expect(d.GHAbsent).To(BeTrue())
+		Expect(d.GHUnavailable).To(BeFalse())
+		Expect(gh.PRListCallCount()).To(Equal(0))
+	})
+
+	It("does not flag GHAbsent for a non-GitHub repo when gh is unavailable", func() {
+		gh.AvailableReturns(false)
+		gh.KnownHostsReturns([]string{"github.com"})
+		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", RemoteHost: "gitlab.com"}, false)
+		Expect(d.HasSlug).To(BeFalse())
+		Expect(d.GHAbsent).To(BeFalse()) // non-GitHub repo -> no spurious "gh not found" note
+		Expect(gh.PRListCallCount()).To(Equal(0))
+	})
+
+	It("queries gh with a host-prefixed slug for a GitHub Enterprise remote", func() {
+		gh.KnownHostsReturns([]string{"github.example.com"})
+		gh.PRListReturns(nil, nil)
+		_, _ = eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", RemoteHost: "github.example.com"}, false)
+		Expect(gh.PRListCallCount()).To(Equal(1))
+		slug, state := gh.PRListArgsForCall(0)
+		Expect(slug).To(Equal("github.example.com/o/r"))
+		Expect(state).To(Equal("all"))
 	})
 })
 
@@ -302,24 +365,28 @@ var _ = Describe("Engine sync helpers", func() {
 	Describe("syncNote (open PR head)", func() {
 		It("is 'origin only' when there is no local branch", func() {
 			git.LocalBranchExistsReturns(false, nil)
-			Expect(eng.SyncNoteForTest("/r", "feat")).To(Equal(dashboard.FlagNote{Text: "origin only", Sev: dashboard.SevNone}))
+			Expect(eng.SyncNoteForTest("/r", "origin", "feat")).To(Equal(dashboard.FlagNote{Text: "origin only", Sev: dashboard.SevNone}))
 		})
 		It("warns local-only when pushed nowhere", func() {
 			git.LocalBranchExistsReturns(true, nil)
 			git.RemoteBranchExistsReturns(false, nil)
-			Expect(eng.SyncNoteForTest("/r", "feat")).To(Equal(dashboard.FlagNote{Text: "⚠ local-only (not pushed)", Sev: dashboard.SevYellow}))
+			Expect(eng.SyncNoteForTest("/r", "origin", "feat")).To(Equal(dashboard.FlagNote{Text: "⚠ local-only (not pushed)", Sev: dashboard.SevYellow}))
 		})
 		It("is in-sync when both present and not diverged", func() {
 			git.LocalBranchExistsReturns(true, nil)
 			git.RemoteBranchExistsReturns(true, nil)
 			git.DivergenceReturns(0, 0, nil)
-			Expect(eng.SyncNoteForTest("/r", "feat")).To(Equal(dashboard.FlagNote{Text: "✓ in sync", Sev: dashboard.SevGreen}))
+			Expect(eng.SyncNoteForTest("/r", "origin", "feat")).To(Equal(dashboard.FlagNote{Text: "✓ in sync", Sev: dashboard.SevGreen}))
 		})
 		It("warns with the divergence text when diverged", func() {
 			git.LocalBranchExistsReturns(true, nil)
 			git.RemoteBranchExistsReturns(true, nil)
 			git.DivergenceReturns(2, 3, nil) // behind=2, ahead=3
-			Expect(eng.SyncNoteForTest("/r", "feat")).To(Equal(dashboard.FlagNote{Text: "⚠ diverged ↑3↓2", Sev: dashboard.SevYellow}))
+			Expect(eng.SyncNoteForTest("/r", "origin", "feat")).To(Equal(dashboard.FlagNote{Text: "⚠ diverged ↑3↓2", Sev: dashboard.SevYellow}))
+		})
+		It("reports no remote configured when remote is empty", func() {
+			git.LocalBranchExistsReturns(true, nil)
+			Expect(eng.SyncNoteForTest("/r", "", "feat")).To(Equal(dashboard.FlagNote{Text: "⚠ no remote configured", Sev: dashboard.SevYellow}))
 		})
 	})
 
@@ -328,27 +395,33 @@ var _ = Describe("Engine sync helpers", func() {
 			git.LocalBranchExistsReturns(true, nil)
 			git.RemoteBranchExistsReturns(true, nil)
 			git.DivergenceReturns(0, 0, nil)
-			s, reason := eng.WipSyncForTest("/r", "b")
+			s, reason := eng.WipSyncForTest("/r", "origin", "b")
 			Expect(s).To(Equal(dashboard.SyncOK))
 			Expect(reason).To(BeEmpty())
 		})
 		It("is Bad/local-only when not pushed", func() {
 			git.LocalBranchExistsReturns(true, nil)
 			git.RemoteBranchExistsReturns(false, nil)
-			s, reason := eng.WipSyncForTest("/r", "b")
+			s, reason := eng.WipSyncForTest("/r", "origin", "b")
 			Expect(s).To(Equal(dashboard.SyncBad))
 			Expect(reason).To(Equal("local only — not pushed"))
 		})
 		It("is NA when neither side has the branch", func() {
 			git.LocalBranchExistsReturns(false, nil)
 			git.RemoteBranchExistsReturns(false, nil)
-			s, _ := eng.WipSyncForTest("/r", "b")
+			s, _ := eng.WipSyncForTest("/r", "origin", "b")
 			Expect(s).To(Equal(dashboard.SyncNA))
 		})
-		It("uses the sync remote (origin) for the remote check", func() {
-			_, _ = eng.WipSyncForTest("/r", "b")
+		It("uses the configured remote for the remote check", func() {
+			_, _ = eng.WipSyncForTest("/r", "fork", "b")
 			_, remote, _ := git.RemoteBranchExistsArgsForCall(0)
-			Expect(remote).To(Equal("origin"))
+			Expect(remote).To(Equal("fork"))
+		})
+		It("is NA immediately when remote is empty (no git calls)", func() {
+			s, reason := eng.WipSyncForTest("/r", "", "b")
+			Expect(s).To(Equal(dashboard.SyncNA))
+			Expect(reason).To(BeEmpty())
+			Expect(git.LocalBranchExistsCallCount()).To(Equal(0)) // proves the early return
 		})
 	})
 })
@@ -365,7 +438,7 @@ var _ = Describe("Engine drilldown — review coverage", func() {
 	BeforeEach(func() {
 		git = &vcsfakes.FakeGitRunner{}
 		eng = dashboard.Engine{Git: git}
-		r = config.Resolved{Path: "/r"}
+		r = config.Resolved{Path: "/r", Remote: "origin"}
 		git.LocalBranchExistsReturns(true, nil)
 		git.RemoteBranchExistsReturns(true, nil)
 	})
@@ -373,11 +446,11 @@ var _ = Describe("Engine drilldown — review coverage", func() {
 	Describe("divFlag arms (via syncNote)", func() {
 		It("reports ahead-only as unpushed", func() {
 			git.DivergenceReturns(0, 2, nil) // behind=0, ahead=2
-			Expect(eng.SyncNoteForTest("/r", "b")).To(Equal(dashboard.FlagNote{Text: "⚠ ↑2 unpushed", Sev: dashboard.SevYellow}))
+			Expect(eng.SyncNoteForTest("/r", "origin", "b")).To(Equal(dashboard.FlagNote{Text: "⚠ ↑2 unpushed", Sev: dashboard.SevYellow}))
 		})
 		It("reports behind-only as behind", func() {
 			git.DivergenceReturns(3, 0, nil) // behind=3, ahead=0
-			Expect(eng.SyncNoteForTest("/r", "b")).To(Equal(dashboard.FlagNote{Text: "⚠ ↓3 behind", Sev: dashboard.SevYellow}))
+			Expect(eng.SyncNoteForTest("/r", "origin", "b")).To(Equal(dashboard.FlagNote{Text: "⚠ ↓3 behind", Sev: dashboard.SevYellow}))
 		})
 	})
 

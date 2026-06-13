@@ -126,9 +126,9 @@ func runSummary(c *cli.Context, git vcs.GitRunner) error {
 		return err
 	}
 	eng := dashboard.Engine{Git: git, GH: vcs.NewGHRunner(), TK: vcs.NewTKRunner()}
-	rows, err := eng.Summary(cfg, c.Bool("fetch"))
+	res, err := eng.Summary(cfg, c.Bool("fetch"))
 	if err != nil {
 		return err
 	}
-	return render.Summary(c.App.Writer, rows, c.Bool("fetch"))
+	return render.Summary(c.App.Writer, res.Rows, c.Bool("fetch"), res.GHAbsent)
 }

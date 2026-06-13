@@ -36,7 +36,7 @@ var sampleRows = []dashboard.SummaryRow{
 
 func renderSummary(fetched bool) string {
 	var buf bytes.Buffer
-	Expect(render.Summary(&buf, sampleRows, fetched)).To(Succeed())
+	Expect(render.Summary(&buf, sampleRows, fetched, false)).To(Succeed())
 	return buf.String()
 }
 
@@ -58,7 +58,7 @@ func matchesGolden(name, got string) {
 var _ = Describe("render.Summary", func() {
 	It("with zero rows emits the header, separator, and footer only", func() {
 		var buf bytes.Buffer
-		Expect(render.Summary(&buf, nil, false)).To(Succeed())
+		Expect(render.Summary(&buf, nil, false, false)).To(Succeed())
 		matchesGolden("summary_empty.golden", buf.String())
 	})
 
@@ -68,6 +68,16 @@ var _ = Describe("render.Summary", func() {
 
 	It("matches the fetched-footer golden file", func() {
 		matchesGolden("summary_fetched.golden", renderSummary(true))
+	})
+
+	It("appends a gh-absent note to the footer when ghAbsent is true", func() {
+		var buf bytes.Buffer
+		Expect(render.Summary(&buf, sampleRows, false, true)).To(Succeed())
+		Expect(buf.String()).To(ContainSubstring("gh not found — PR counts hidden"))
+	})
+
+	It("omits the gh note when gh is available", func() {
+		Expect(renderSummary(false)).NotTo(ContainSubstring("gh not found"))
 	})
 
 	It("emits byte-identical output under forced color and NO_COLOR (no leak)", func() {

@@ -10,11 +10,6 @@ import (
 	"github.com/geofffranks/herdle/internal/vcs"
 )
 
-// syncRemote is the conventional push remote. Unlike the PR/slug remote (which
-// is config-driven, upstream-preferring), branch existence/divergence/prune run
-// against "origin": on a fork your branches live there, not on upstream.
-const syncRemote = "origin"
-
 // SyncState is the WIP "sync" column glyph: ✓ / ✗ / ·.
 type SyncState int
 
@@ -85,6 +80,7 @@ type Drilldown struct {
 	Head          HeadInfo
 	HasSlug       bool
 	GHUnavailable bool
+	GHAbsent      bool
 	OpenPRs       []PRRow
 	MergedCleanup []MergedRow
 	WIP           []WIPRow
@@ -92,10 +88,10 @@ type Drilldown struct {
 	Artifacts     []ArtifactRow
 }
 
-// divFlag mirrors wip's div_flag: a local branch's divergence vs the sync remote.
-// Divergence returns (left, right) = (behind, ahead) for "origin/b...b".
-func (e Engine) divFlag(path, branch string) string {
-	behind, ahead, err := e.Git.Divergence(path, syncRemote+"/"+branch, branch)
+// divFlag mirrors wip's div_flag: a local branch's divergence vs the given remote.
+// Divergence returns (left, right) = (behind, ahead) for "remote/b...b".
+func (e Engine) divFlag(path, remote, branch string) string {
+	behind, ahead, err := e.Git.Divergence(path, remote+"/"+branch, branch)
 	if err != nil {
 		return "?"
 	}
@@ -111,40 +107,51 @@ func (e Engine) divFlag(path, branch string) string {
 	}
 }
 
-// syncNote mirrors wip's sync_note for an open PR's head branch.
-func (e Engine) syncNote(path, branch string) FlagNote {
+// syncNote mirrors wip's sync_note for an open PR's head branch, against remote.
+func (e Engine) syncNote(path, remote, branch string) FlagNote {
 	if local, _ := e.Git.LocalBranchExists(path, branch); !local {
-		return FlagNote{Text: "origin only", Sev: SevNone}
+		name := remote
+		if name == "" {
+			name = "remote"
+		}
+		return FlagNote{Text: name + " only", Sev: SevNone}
 	}
-	if remote, _ := e.Git.RemoteBranchExists(path, syncRemote, branch); !remote {
+	if remote == "" {
+		return FlagNote{Text: "⚠ no remote configured", Sev: SevYellow}
+	}
+	if r, _ := e.Git.RemoteBranchExists(path, remote, branch); !r {
 		return FlagNote{Text: "⚠ local-only (not pushed)", Sev: SevYellow}
 	}
-	if d := e.divFlag(path, branch); d != "" {
+	if d := e.divFlag(path, remote, branch); d != "" {
 		return FlagNote{Text: "⚠ " + d, Sev: SevYellow}
 	}
 	return FlagNote{Text: "✓ in sync", Sev: SevGreen}
 }
 
-// wipSync mirrors wip's wip_sync for a non-PR branch.
-func (e Engine) wipSync(path, branch string) (SyncState, string) {
+// wipSync mirrors wip's wip_sync for a non-PR branch, against remote. With no
+// configured remote there is nothing to compare against, so the branch is n/a.
+func (e Engine) wipSync(path, remote, branch string) (SyncState, string) {
+	if remote == "" {
+		return SyncNA, ""
+	}
 	local, _ := e.Git.LocalBranchExists(path, branch)
-	remote, _ := e.Git.RemoteBranchExists(path, syncRemote, branch)
+	remoteExists, _ := e.Git.RemoteBranchExists(path, remote, branch)
 	switch {
-	case local && remote:
-		if d := e.divFlag(path, branch); d != "" {
+	case local && remoteExists:
+		if d := e.divFlag(path, remote, branch); d != "" {
 			return SyncBad, d
 		}
 		return SyncOK, ""
 	case local:
 		return SyncBad, "local only — not pushed"
-	case remote:
+	case remoteExists:
 		return SyncBad, "remote only — no local branch"
 	default:
 		return SyncNA, ""
 	}
 }
 
-func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path string) []PRRow {
+func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path, remote string) []PRRow {
 	var rows []PRRow
 	for _, pr := range prs {
 		if pr.State != "OPEN" {
@@ -155,13 +162,13 @@ func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path string) []PRRow
 			Head:   pr.HeadRefName,
 			Title:  pr.Title,
 			TKs:    tksForPR(tickets, pr.Number, pr.HeadRefName),
-			Note:   e.syncNote(path, pr.HeadRefName),
+			Note:   e.syncNote(path, remote, pr.HeadRefName),
 		})
 	}
 	return rows
 }
 
-func (e Engine) mergedCleanupRows(prs []vcs.PR, tickets []dticket, path string) []MergedRow {
+func (e Engine) mergedCleanupRows(prs []vcs.PR, tickets []dticket, path, remote string) []MergedRow {
 	var rows []MergedRow
 	for _, pr := range prs {
 		if pr.State != "MERGED" {
@@ -171,8 +178,10 @@ func (e Engine) mergedCleanupRows(prs []vcs.PR, tickets []dticket, path string) 
 		if ok, _ := e.Git.LocalBranchExists(path, pr.HeadRefName); ok {
 			flags = append(flags, "⚠ local branch")
 		}
-		if ok, _ := e.Git.RemoteBranchExists(path, syncRemote, pr.HeadRefName); ok {
-			flags = append(flags, "⚠ origin branch")
+		if remote != "" {
+			if ok, _ := e.Git.RemoteBranchExists(path, remote, pr.HeadRefName); ok {
+				flags = append(flags, "⚠ "+remote+" branch")
+			}
 		}
 		if tks := tksForPR(tickets, pr.Number, pr.HeadRefName); len(tks) > 0 {
 			flags = append(flags, "⚠ tk "+strings.Join(tks, ",")+" open")
@@ -234,10 +243,13 @@ func (e Engine) effectiveLifecycle(path string, t vcs.Ticket) string {
 }
 
 // excludedBranches is the config-driven set of branches kept out of the WIP
-// section: the universal trunks + the sync remote name + the per-project base
-// and integration branches. (De-personalized: no hardcoded dev/geoff-main.)
+// section: the universal trunks + the configured remote name + the per-project
+// base and integration branches. (De-personalized: no hardcoded dev/geoff-main.)
 func (e Engine) excludedBranches(r config.Resolved) map[string]bool {
-	ex := map[string]bool{"main": true, "master": true, "HEAD": true, syncRemote: true}
+	ex := map[string]bool{"main": true, "master": true, "HEAD": true}
+	if r.Remote != "" {
+		ex[r.Remote] = true
+	}
 	if r.Base != "" {
 		ex[r.Base] = true
 	}
@@ -260,9 +272,11 @@ func (e Engine) wipRows(r config.Resolved, prs []vcs.PR, tickets []dticket) []WI
 			gone[b.Name] = true
 		}
 	}
-	remoteBranches, _ := e.Git.RemoteBranches(path, syncRemote)
-	for _, b := range remoteBranches {
-		set[b] = true
+	if r.Remote != "" { // no configured remote -> nothing to list
+		remoteBranches, _ := e.Git.RemoteBranches(path, r.Remote)
+		for _, b := range remoteBranches {
+			set[b] = true
+		}
 	}
 	var names []string
 	for b := range set {
@@ -284,7 +298,7 @@ func (e Engine) wipRows(r config.Resolved, prs []vcs.PR, tickets []dticket) []WI
 		if inPR[b] || gone[b] {
 			continue
 		}
-		sync, reason := e.wipSync(path, b)
+		sync, reason := e.wipSync(path, r.Remote, b)
 		row := WIPRow{Branch: b, Sync: sync}
 		if t, ok := tkForBranch(tickets, b); ok {
 			matched[t.ID] = true
@@ -374,32 +388,40 @@ func upNextRows(tickets []dticket) []UpNextRow {
 
 // Drilldown gathers and classifies one repo's work state, mirroring wip's
 // drilldown(). r supplies the de-personalized config (Name/Path/Slug/Base/
-// Integration); the sync remote is always "origin".
+// Integration/Remote/RemoteHost). GH degradation is handled transparently:
+// GHAbsent is set when gh is unavailable, GHUnavailable when gh is up but
+// PRList errors.
 func (e Engine) Drilldown(r config.Resolved, fetch bool) (Drilldown, error) {
-	d := Drilldown{Name: r.Name, Path: r.Path, HasSlug: r.Slug != ""}
+	ghAvail := e.GH.Available()
+	known := e.knownGitHubHosts()
+	slug, isGitHub := effectiveSlug(r, known)
+	// GHAbsent notes that PR data is hidden because gh is missing — only relevant
+	// when this project is actually a GitHub remote; a non-GitHub repo shows no PR
+	// sections regardless, so a gh-absent note would be spurious.
+	d := Drilldown{Name: r.Name, Path: r.Path, HasSlug: isGitHub, GHAbsent: !ghAvail && isGitHub}
 
 	if fetch {
 		_ = e.Git.Fetch(r.Path)
 		d.Fetched = true
-	} else {
-		_ = e.Git.PruneRemote(r.Path, syncRemote)
+	} else if r.Remote != "" {
+		_ = e.Git.PruneRemote(r.Path, r.Remote)
 	}
 
 	d.Head = e.head(r.Path)
 
 	var prs []vcs.PR
-	if d.HasSlug {
-		var err error
-		if prs, err = e.GH.PRList(r.Slug, "all"); err != nil {
+	if isGitHub && ghAvail {
+		if got, err := e.GH.PRList(slug, "all"); err != nil {
 			d.GHUnavailable = true
-			prs = nil
+		} else {
+			prs = got
 		}
 	}
 
 	tickets := e.ticketTable(r.Path)
 
-	d.OpenPRs = e.openPRRows(prs, tickets, r.Path)
-	d.MergedCleanup = e.mergedCleanupRows(prs, tickets, r.Path)
+	d.OpenPRs = e.openPRRows(prs, tickets, r.Path, r.Remote)
+	d.MergedCleanup = e.mergedCleanupRows(prs, tickets, r.Path, r.Remote)
 	d.WIP = e.wipRows(r, prs, tickets)
 	d.UpNext = upNextRows(tickets)
 	d.Artifacts = e.artifactRows(r.Path)

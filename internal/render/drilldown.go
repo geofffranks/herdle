@@ -82,10 +82,13 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 
 	// legends (always)
 	out.line("")
-	out.line(fmt.Sprintf("sync: %s✓%s local==origin · %s✗%s differs (see issues) · %s·%s n/a — merged-PR & upstream-gone branches hidden, origin auto-pruned",
+	out.line(fmt.Sprintf("sync: %s✓%s local==remote · %s✗%s differs (see issues) · %s·%s n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned",
 		p.grn, p.rst, p.red, p.rst, p.dim, p.rst))
 	out.line(fmt.Sprintf("lifecycle: %s-%s (not started) → %sdesigned%s → %splanned%s → %sin-development%s → %spending-validation%s → %svalidated%s",
 		p.dim, p.rst, p.mag, p.rst, p.blu, p.rst, p.cyn, p.rst, p.yel, p.rst, p.grn, p.rst))
+	if d.GHAbsent {
+		out.line(p.dim + "gh: not found — PR sections hidden" + p.rst)
+	}
 
 	return out.err
 }

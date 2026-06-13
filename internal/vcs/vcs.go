@@ -60,13 +60,21 @@ type GitRunner interface {
 
 //counterfeiter:generate -o vcsfakes/fake_gh_runner.go . GHRunner
 
-// GHRunner wraps `gh pr list`. PRList returns a non-nil error on gh failure
-// (missing binary, auth, network) — never a silent empty slice.
+// GHRunner wraps `gh`. PRList returns a non-nil error on gh failure (missing
+// binary, auth, network) — never a silent empty slice. Available and KnownHosts
+// support graceful degradation and GitHub-Enterprise detection.
 type GHRunner interface {
 	// PRList returns the @me-authored PRs for slug in the given state
-	// ("open" | "all"). The impl retries once and validates a JSON-array shape
-	// before trusting an empty result.
+	// ("open" | "all"). slug is gh's [HOST/]OWNER/REPO. The impl retries once and
+	// validates a JSON-array shape before trusting an empty result.
 	PRList(slug, state string) ([]PR, error)
+	// Available reports whether the gh binary can be located (HERDLE_GH override,
+	// else PATH). It does not check auth — that is herdle doctor's job (S8).
+	Available() bool
+	// KnownHosts returns the GitHub hosts gh is authenticated to — the top-level
+	// keys of gh's hosts.yml — always unioned with "github.com". A missing or
+	// unreadable file yields just {"github.com"}.
+	KnownHosts() []string
 }
 
 //counterfeiter:generate -o vcsfakes/fake_tk_runner.go . TKRunner

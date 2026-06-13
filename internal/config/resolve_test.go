@@ -21,6 +21,7 @@ var _ = Describe("Config.Resolve", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r).To(Equal(config.Resolved{
 			Path: "/repo", Name: "repo", Remote: "fork", Base: "dev", Integration: "mine", Slug: "o/r",
+			SlugExplicit: true,
 		}))
 		Expect(git.RemoteURLCallCount()).To(Equal(0)) // nothing to autodetect
 	})
@@ -35,7 +36,7 @@ var _ = Describe("Config.Resolve", func() {
 		Expect(git.RemoteURLCallCount()).To(Equal(1))
 	})
 
-	It("autodetects remote=upstream, base from RemoteHead, slug from the URL", func() {
+	It("falls back to upstream when origin is absent (base from RemoteHead, slug from the URL)", func() {
 		git := &vcsfakes.FakeGitRunner{}
 		git.RemoteURLStub = func(_, remote string) (string, error) {
 			if remote == "upstream" {
@@ -106,4 +107,60 @@ var _ = Describe("slugFromURL (via Resolve)", func() {
 		})
 	}
 	_ = vcs.ErrNotARepo // keep the vcs import even if unused above
+})
+
+var _ = Describe("Config.Resolve — S6 additions", func() {
+	It("prefers origin over upstream when both remotes exist", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLStub = func(_, remote string) (string, error) {
+			switch remote {
+			case "origin":
+				return "git@github.com:me/fork.git", nil
+			case "upstream":
+				return "git@github.com:canon/repo.git", nil
+			}
+			return "", errors.New("no such remote")
+		}
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.Remote).To(Equal("origin"))
+		Expect(r.Slug).To(Equal("me/fork"))
+	})
+
+	It("sets RemoteHost from the derived remote URL and leaves SlugExplicit false", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("git@github.example.com:o/r.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.Slug).To(Equal("o/r"))
+		Expect(r.RemoteHost).To(Equal("github.example.com"))
+		Expect(r.SlugExplicit).To(BeFalse())
+	})
+
+	It("marks SlugExplicit when the slug comes from a gh= override", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("git@github.com:me/fork.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin", GH: "canon/repo"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.Slug).To(Equal("canon/repo"))
+		Expect(r.SlugExplicit).To(BeTrue())
+		Expect(r.RemoteHost).To(Equal(""))
+	})
+
+	It("strips the port from a scheme://host:port remote URL", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("ssh://git@github.com:22/o/r.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.RemoteHost).To(Equal("github.com"))
+		Expect(r.Slug).To(Equal("o/r"))
+	})
 })

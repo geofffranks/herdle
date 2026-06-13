@@ -70,6 +70,18 @@ var _ = Describe("render.Drilldown", func() {
 		Expect(out).To(ContainSubstring("sync:"))
 		Expect(out).To(ContainSubstring("lifecycle:"))
 	})
+
+	It("adds a gh-not-found legend line when GHAbsent", func() {
+		d := sampleDrilldown
+		d.GHAbsent = true
+		var buf bytes.Buffer
+		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
+		Expect(buf.String()).To(ContainSubstring("gh: not found — PR sections hidden"))
+	})
+
+	It("omits the gh-not-found legend when gh is available", func() {
+		Expect(renderDrilldown(false)).NotTo(ContainSubstring("gh: not found"))
+	})
 })
 
 // stripANSI removes CSI sequences for the color-parity assertion.

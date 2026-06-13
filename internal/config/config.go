@@ -29,4 +29,13 @@ type Resolved struct {
 	Base        string
 	Integration string
 	Slug        string
+	// RemoteHost is the host parsed from the resolved remote's URL ("" when there
+	// is no remote, the slug came only from a gh= override, or the URL is
+	// unparseable). The dashboard uses it to decide whether a remote is a GitHub
+	// (or GitHub Enterprise) host.
+	RemoteHost string
+	// SlugExplicit is true when Slug came from the project's gh= override rather
+	// than from URL derivation; an explicit slug is trusted as-is (host filtering
+	// is skipped).
+	SlugExplicit bool
 }

@@ -50,6 +50,14 @@ type SummaryRow struct {
 	TK   TKCell
 }
 
+// SummaryResult is the cross-project summary plus run-wide degradation state.
+// GHAbsent is true when the gh binary could not be located, so the renderer can
+// note that PR counts are hidden.
+type SummaryResult struct {
+	Rows     []SummaryRow
+	GHAbsent bool
+}
+
 // Engine gathers dashboard state through the vcs runners. DirExists abstracts the
 // project-directory check so the engine is testable without touching disk; when
 // nil it defaults to an os.Stat-backed check.

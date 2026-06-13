@@ -130,6 +130,20 @@ type FakeGitRunner struct {
 		result1 []string
 		result2 error
 	}
+	RemoteHeadStub        func(string, string) (string, error)
+	remoteHeadMutex       sync.RWMutex
+	remoteHeadArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
+	remoteHeadReturns struct {
+		result1 string
+		result2 error
+	}
+	remoteHeadReturnsOnCall map[int]struct {
+		result1 string
+		result2 error
+	}
 	RemoteURLStub        func(string, string) (string, error)
 	remoteURLMutex       sync.RWMutex
 	remoteURLArgsForCall []struct {
@@ -737,6 +751,71 @@ func (fake *FakeGitRunner) RemoteBranchesReturnsOnCall(i int, result1 []string, 
 	}
 	fake.remoteBranchesReturnsOnCall[i] = struct {
 		result1 []string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeGitRunner) RemoteHead(arg1 string, arg2 string) (string, error) {
+	fake.remoteHeadMutex.Lock()
+	ret, specificReturn := fake.remoteHeadReturnsOnCall[len(fake.remoteHeadArgsForCall)]
+	fake.remoteHeadArgsForCall = append(fake.remoteHeadArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.RemoteHeadStub
+	fakeReturns := fake.remoteHeadReturns
+	fake.recordInvocation("RemoteHead", []interface{}{arg1, arg2})
+	fake.remoteHeadMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeGitRunner) RemoteHeadCallCount() int {
+	fake.remoteHeadMutex.RLock()
+	defer fake.remoteHeadMutex.RUnlock()
+	return len(fake.remoteHeadArgsForCall)
+}
+
+func (fake *FakeGitRunner) RemoteHeadCalls(stub func(string, string) (string, error)) {
+	fake.remoteHeadMutex.Lock()
+	defer fake.remoteHeadMutex.Unlock()
+	fake.RemoteHeadStub = stub
+}
+
+func (fake *FakeGitRunner) RemoteHeadArgsForCall(i int) (string, string) {
+	fake.remoteHeadMutex.RLock()
+	defer fake.remoteHeadMutex.RUnlock()
+	argsForCall := fake.remoteHeadArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeGitRunner) RemoteHeadReturns(result1 string, result2 error) {
+	fake.remoteHeadMutex.Lock()
+	defer fake.remoteHeadMutex.Unlock()
+	fake.RemoteHeadStub = nil
+	fake.remoteHeadReturns = struct {
+		result1 string
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeGitRunner) RemoteHeadReturnsOnCall(i int, result1 string, result2 error) {
+	fake.remoteHeadMutex.Lock()
+	defer fake.remoteHeadMutex.Unlock()
+	fake.RemoteHeadStub = nil
+	if fake.remoteHeadReturnsOnCall == nil {
+		fake.remoteHeadReturnsOnCall = make(map[int]struct {
+			result1 string
+			result2 error
+		})
+	}
+	fake.remoteHeadReturnsOnCall[i] = struct {
+		result1 string
 		result2 error
 	}{result1, result2}
 }

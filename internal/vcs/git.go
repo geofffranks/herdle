@@ -55,6 +55,19 @@ func (g gitRunner) RemoteURL(path, remote string) (string, error) {
 	return res.trimmed(), nil
 }
 
+func (g gitRunner) RemoteHead(path, remote string) (string, error) {
+	res, err := g.git(path, "symbolic-ref", "--short", "refs/remotes/"+remote+"/HEAD")
+	if err != nil {
+		return "", err
+	}
+	if res.code != 0 {
+		// No refs/remotes/<remote>/HEAD set locally — not an error; the caller
+		// falls back to main/master. Purely local; no network probe.
+		return "", nil
+	}
+	return strings.TrimPrefix(res.trimmed(), remote+"/"), nil
+}
+
 func (g gitRunner) IsDirty(path string) (bool, error) {
 	wt, err := g.git(path, "diff", "--quiet")
 	if err != nil {

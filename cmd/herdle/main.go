@@ -25,16 +25,7 @@ func newApp() *cli.App {
 					return nil
 				},
 			},
-			{
-				Name:  "project",
-				Usage: "manage configured projects",
-				Subcommands: []*cli.Command{
-					{Name: "add", Usage: "add a project", Action: notImplemented("project add", "S3")},
-					{Name: "set", Usage: "update a project", Action: notImplemented("project set", "S3")},
-					{Name: "rm", Usage: "remove a project", Action: notImplemented("project rm", "S3")},
-					{Name: "list", Usage: "list configured projects", Action: notImplemented("project list", "S3")},
-				},
-			},
+			projectCommand(),
 			{
 				Name:   "init",
 				Usage:  "write embedded skills, rules, and config",

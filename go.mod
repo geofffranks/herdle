@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.3
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/onsi/ginkgo/v2 v2.30.0
 	github.com/onsi/gomega v1.41.0
 	github.com/urfave/cli/v2 v2.27.7
@@ -14,7 +15,6 @@ require (
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.19.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/anthropics/anthropic-sdk-go v1.46.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect

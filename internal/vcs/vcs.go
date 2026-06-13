@@ -53,6 +53,7 @@ type GitRunner interface {
 	LocalBranches(path string) ([]Branch, error)                            // for-each-ref refs/heads (+ upstream:track)
 	RemoteBranches(path, remote string) ([]string, error)                   // for-each-ref refs/remotes/<remote> (stripped)
 	RemoteURL(path, remote string) (string, error)                          // remote get-url <remote>
+	RemoteHead(path, remote string) (string, error)                         // symbolic-ref --short refs/remotes/<remote>/HEAD; "" when unset
 	Fetch(path string) error                                                // fetch --all --prune
 	PruneRemote(path, remote string) error                                  // remote prune <remote>
 }

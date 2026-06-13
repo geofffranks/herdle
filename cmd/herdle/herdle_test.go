@@ -35,12 +35,6 @@ var _ = Describe("herdle CLI", func() {
 			Expect(err.Error()).To(ContainSubstring("not implemented"))
 		})
 
-		It("errors for a nested subcommand", func() {
-			err := app.Run([]string{"herdle", "project", "list"})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not implemented"))
-		})
-
 		It("errors for the root action", func() {
 			err := app.Run([]string{"herdle"})
 			Expect(err).To(HaveOccurred())

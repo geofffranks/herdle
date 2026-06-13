@@ -85,6 +85,20 @@ var _ = Describe("GitRunner (env-override smoke + simple queries)", func() {
 		dir := gitStub("#!/bin/sh\nexit 0\n")
 		Expect(git.PruneRemote(dir, "origin")).To(Succeed())
 	})
+
+	It("reads the remote HEAD branch, stripping the remote prefix", func() {
+		dir := gitStub("#!/bin/sh\necho origin/main\n")
+		head, err := git.RemoteHead(dir, "origin")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(head).To(Equal("main"))
+	})
+
+	It("returns empty (no error) when no remote HEAD is set", func() {
+		dir := gitStub("#!/bin/sh\nexit 1\n") // symbolic-ref fails -> caller falls back
+		head, err := git.RemoteHead(dir, "origin")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(head).To(Equal(""))
+	})
 })
 
 var _ = Describe("GitRunner (divergence, refs, listings)", func() {

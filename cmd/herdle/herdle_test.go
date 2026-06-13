@@ -35,7 +35,7 @@ var _ = Describe("herdle CLI", func() {
 			Expect(err.Error()).To(ContainSubstring("not implemented"))
 		})
 
-		It("errors for the root action", func() {
+		It("routes the no-arg root action inside a repo to the drilldown stub (S5)", func() {
 			err := app.Run([]string{"herdle"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not implemented"))

@@ -15,7 +15,11 @@ func newApp() *cli.App {
 		Name:    "herdle",
 		Usage:   "Wrangle the herd, spot the hurdles.",
 		Version: Version,
-		Action:  notImplemented("", "S4/S5 — dashboard"),
+		Flags: []cli.Flag{
+			&cli.BoolFlag{Name: "all", Aliases: []string{"a"}, Usage: "force the cross-project summary even inside a repo"},
+			&cli.BoolFlag{Name: "fetch", Aliases: []string{"f"}, Usage: "git fetch each repo first (network; default is offline)"},
+		},
+		Action: rootAction,
 		Commands: []*cli.Command{
 			{
 				Name:  "version",

@@ -1,0 +1,91 @@
+on:
+  release:
+    types: [created]
+  # Manual trigger: rebuild release artifacts for an existing tag (e.g. to retry
+  # a failed upload) or to test this workflow.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build artifacts for (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-artifacts:
+    name: build-release-artifacts
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+        - goos: linux
+          goarch: amd64
+        - goos: linux
+          goarch: arm64
+        - goos: windows
+          goarch: amd64
+        - goos: darwin
+          goarch: amd64
+        - goos: darwin
+          goarch: arm64
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        ref: ${{ github.event.release.tag_name || inputs.tag }}
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: stable
+        check-latest: true
+
+    - name: Build
+      env:
+        CGO_ENABLED: 0
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: 'go build -v -o herdle-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-X main.Version=${{ github.event.release.tag_name || inputs.tag }}" ./cmd/herdle'
+
+    - name: Upload asset + sha1
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        BIN: herdle-${{ matrix.goos }}-${{ matrix.goarch }}
+      run: |
+        sha1sum "$BIN" > "$BIN.sha1"
+        gh release upload "$TAG" "$BIN" "$BIN.sha1" --clobber
+
+  annotate-go-version:
+    name: annotate-go-version
+    needs: build-release-artifacts
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: stable
+        check-latest: true
+
+    - name: Capture resolved Go version
+      id: gover
+      run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+    - name: Append Go version to release notes (idempotent)
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # No checkout in this job, so gh CLI cannot infer the repo from
+        # git remotes. Pin it explicitly.
+        GH_REPO: ${{ github.repository }}
+        TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        GOVER: ${{ steps.gover.outputs.version }}
+      run: |
+        BODY=$(gh release view "$TAG" --json body -q .body)
+        MARKER='<!-- go-version-footer -->'
+        if printf '%s' "$BODY" | grep -qF "$MARKER"; then
+          echo "Go version footer already present; skipping."
+          exit 0
+        fi
+        FOOTER=$(printf '\n\n---\n%s\n_Binaries built with %s._' "$MARKER" "$GOVER")
+        gh release edit "$TAG" --notes "$BODY$FOOTER"

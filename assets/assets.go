@@ -1,7 +1,6 @@
 // Package assets bundles herdle's installable convention artifacts (Claude Code
 // skills and the rules stub) into the binary via go:embed; internal/initcmd lays
-// them on disk. The files under skills/ and rules/ are placeholders until S9
-// (her-cung) ships the real, de-personalized content.
+// them on disk.
 package assets
 
 import "embed"

@@ -117,6 +117,8 @@ func (t tkRunner) Ready(path string) ([]string, error) {
 	return ids, nil
 }
 
+func (tkRunner) Available() bool { return binaryAvailable("HERDLE_TK", "tk") }
+
 func (t tkRunner) HasTickets(path string) (bool, error) {
 	info, err := os.Stat(filepath.Join(path, ".tickets"))
 	if err != nil {

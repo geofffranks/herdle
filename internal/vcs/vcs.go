@@ -56,6 +56,7 @@ type GitRunner interface {
 	RemoteHead(path, remote string) (string, error)                         // symbolic-ref --short refs/remotes/<remote>/HEAD; "" when unset
 	Fetch(path string) error                                                // fetch --all --prune
 	PruneRemote(path, remote string) error                                  // remote prune <remote>
+	Available() bool                                                        // git binary locatable (HERDLE_GIT override, else PATH)
 }
 
 //counterfeiter:generate -o vcsfakes/fake_gh_runner.go . GHRunner
@@ -75,6 +76,9 @@ type GHRunner interface {
 	// keys of gh's hosts.yml — always unioned with "github.com". A missing or
 	// unreadable file yields just {"github.com"}.
 	KnownHosts() []string
+	// Authenticated reports whether `gh auth status` exits 0 (logged into at
+	// least one host). False when gh is absent — callers gate on Available first.
+	Authenticated() bool
 }
 
 //counterfeiter:generate -o vcsfakes/fake_tk_runner.go . TKRunner
@@ -85,4 +89,5 @@ type TKRunner interface {
 	Tickets(path string) ([]Ticket, error) // tk query + heading read for Title
 	Ready(path string) ([]string, error)   // tk ready -> ready ticket ids
 	HasTickets(path string) (bool, error)  // .tickets/ dir present
+	Available() bool                       // tk binary locatable (HERDLE_TK override, else PATH)
 }

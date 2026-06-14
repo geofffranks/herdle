@@ -103,6 +103,22 @@ var _ = Describe("GHRunner.Available", func() {
 	})
 })
 
+var _ = Describe("GHRunner.Authenticated", func() {
+	It("is true when `gh auth status` exits 0", func() {
+		ghStub("#!/bin/sh\nexit 0\n")
+		Expect(vcs.NewGHRunner().Authenticated()).To(BeTrue())
+	})
+	It("is false when `gh auth status` exits non-zero", func() {
+		ghStub("#!/bin/sh\nexit 1\n")
+		Expect(vcs.NewGHRunner().Authenticated()).To(BeFalse())
+	})
+	It("is false when gh is not installed", func() {
+		os.Setenv("HERDLE_GH", filepath.Join(GinkgoT().TempDir(), "nope"))
+		DeferCleanup(func() { os.Unsetenv("HERDLE_GH") })
+		Expect(vcs.NewGHRunner().Authenticated()).To(BeFalse())
+	})
+})
+
 var _ = Describe("GHRunner.KnownHosts", func() {
 	writeHosts := func(body string) {
 		dir := GinkgoT().TempDir()

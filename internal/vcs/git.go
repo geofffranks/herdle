@@ -178,6 +178,8 @@ func (g gitRunner) Fetch(path string) error {
 	return nil
 }
 
+func (gitRunner) Available() bool { return binaryAvailable("HERDLE_GIT", "git") }
+
 func (g gitRunner) PruneRemote(path, remote string) error {
 	res, err := g.git(path, "remote", "prune", remote)
 	if err != nil {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -56,15 +55,18 @@ func (r ghRunner) PRList(slug, state string) ([]PR, error) {
 	return nil, lastErr
 }
 
-// Available reports whether the gh binary can be located. When HERDLE_GH is set
-// it must point at an existing non-directory file; otherwise gh must be on PATH.
-func (ghRunner) Available() bool {
-	if v := os.Getenv("HERDLE_GH"); v != "" {
-		info, err := os.Stat(v) // #nosec G304,G703 -- HERDLE_GH is a deliberate user-supplied override (see resolveBinary)
-		return err == nil && !info.IsDir()
+// Available reports whether the gh binary can be located (HERDLE_GH override,
+// else PATH). It does not check auth — see Authenticated.
+func (ghRunner) Available() bool { return binaryAvailable("HERDLE_GH", "gh") }
+
+// Authenticated reports whether `gh auth status` exits 0. False when gh cannot be
+// run at all (absent binary / bad override).
+func (r ghRunner) Authenticated() bool {
+	res, err := r.gh("auth", "status")
+	if err != nil {
+		return false
 	}
-	_, err := exec.LookPath("gh")
-	return err == nil
+	return res.code == 0
 }
 
 // KnownHosts returns the GitHub hosts gh is authenticated to (the top-level keys

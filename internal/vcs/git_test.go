@@ -101,6 +101,23 @@ var _ = Describe("GitRunner (env-override smoke + simple queries)", func() {
 	})
 })
 
+var _ = Describe("GitRunner.Available", func() {
+	It("is true when HERDLE_GIT points at an existing file", func() {
+		gitStub("#!/bin/sh\n:\n")
+		Expect(vcs.NewGitRunner().Available()).To(BeTrue())
+	})
+	It("is false when HERDLE_GIT points at a missing path", func() {
+		os.Setenv("HERDLE_GIT", filepath.Join(GinkgoT().TempDir(), "nope"))
+		DeferCleanup(func() { os.Unsetenv("HERDLE_GIT") })
+		Expect(vcs.NewGitRunner().Available()).To(BeFalse())
+	})
+	It("is false when HERDLE_GIT points at a directory", func() {
+		os.Setenv("HERDLE_GIT", GinkgoT().TempDir())
+		DeferCleanup(func() { os.Unsetenv("HERDLE_GIT") })
+		Expect(vcs.NewGitRunner().Available()).To(BeFalse())
+	})
+})
+
 var _ = Describe("GitRunner (divergence, refs, listings)", func() {
 	var git vcs.GitRunner
 	BeforeEach(func() { git = vcs.NewGitRunner() })

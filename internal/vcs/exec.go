@@ -27,6 +27,18 @@ func resolveBinary(envVar, defaultName string) (string, error) {
 	return exec.LookPath(defaultName)
 }
 
+// binaryAvailable reports whether a tool can be located. With envVar set it must
+// point at an existing non-directory file (a custom-install override); otherwise
+// defaultName must be on PATH. Shared by Git/TK/GH Available().
+func binaryAvailable(envVar, defaultName string) bool {
+	if v := os.Getenv(envVar); v != "" {
+		info, err := os.Stat(v) // #nosec G304,G703 -- deliberate user-supplied override (see resolveBinary)
+		return err == nil && !info.IsDir()
+	}
+	_, err := exec.LookPath(defaultName)
+	return err == nil
+}
+
 // run executes bin with args in working directory dir, capturing stdout, stderr,
 // and the exit code. A non-zero exit is NOT an error here: err is non-nil only
 // when the process could not be started (or failed for a non-exit reason).

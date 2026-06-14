@@ -30,12 +30,6 @@ var _ = Describe("herdle CLI", func() {
 	})
 
 	Describe("stub commands", func() {
-		It("errors with a not-implemented message", func() {
-			err := app.Run([]string{"herdle", "doctor"})
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not implemented"))
-		})
-
 		It("routes the no-arg root action inside a repo to the drilldown view", func() {
 			// Pin config to an empty file so the test does not read the developer's
 			// real ~/.config/herdle/config.toml. The herdle repo (this test's cwd)

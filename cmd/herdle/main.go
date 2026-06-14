@@ -31,11 +31,7 @@ func newApp() *cli.App {
 			},
 			projectCommand(),
 			initCommand(),
-			{
-				Name:   "doctor",
-				Usage:  "diagnose the herdle setup",
-				Action: notImplemented("doctor", "S8"),
-			},
+			doctorCommand(),
 		},
 	}
 }

@@ -8,6 +8,16 @@ import (
 )
 
 type FakeGitRunner struct {
+	AvailableStub        func() bool
+	availableMutex       sync.RWMutex
+	availableArgsForCall []struct {
+	}
+	availableReturns struct {
+		result1 bool
+	}
+	availableReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	CurrentBranchStub        func(string) (string, error)
 	currentBranchMutex       sync.RWMutex
 	currentBranchArgsForCall []struct {
@@ -173,6 +183,59 @@ type FakeGitRunner struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeGitRunner) Available() bool {
+	fake.availableMutex.Lock()
+	ret, specificReturn := fake.availableReturnsOnCall[len(fake.availableArgsForCall)]
+	fake.availableArgsForCall = append(fake.availableArgsForCall, struct {
+	}{})
+	stub := fake.AvailableStub
+	fakeReturns := fake.availableReturns
+	fake.recordInvocation("Available", []interface{}{})
+	fake.availableMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeGitRunner) AvailableCallCount() int {
+	fake.availableMutex.RLock()
+	defer fake.availableMutex.RUnlock()
+	return len(fake.availableArgsForCall)
+}
+
+func (fake *FakeGitRunner) AvailableCalls(stub func() bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = stub
+}
+
+func (fake *FakeGitRunner) AvailableReturns(result1 bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = nil
+	fake.availableReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeGitRunner) AvailableReturnsOnCall(i int, result1 bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = nil
+	if fake.availableReturnsOnCall == nil {
+		fake.availableReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.availableReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeGitRunner) CurrentBranch(arg1 string) (string, error) {

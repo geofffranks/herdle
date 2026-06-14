@@ -10,6 +10,28 @@ import (
 	"github.com/geofffranks/herdle/internal/vcs"
 )
 
+// tkStub writes an executable `tk` stub, points HERDLE_TK at it, returns its dir.
+func tkStub(body string) string {
+	dir := GinkgoT().TempDir()
+	p := filepath.Join(dir, "tk")
+	Expect(os.WriteFile(p, []byte(body), 0o755)).To(Succeed()) // #nosec G306 -- executable stub
+	os.Setenv("HERDLE_TK", p)
+	DeferCleanup(func() { os.Unsetenv("HERDLE_TK") })
+	return dir
+}
+
+var _ = Describe("TKRunner.Available", func() {
+	It("is true when HERDLE_TK points at an existing file", func() {
+		tkStub("#!/bin/sh\n:\n")
+		Expect(vcs.NewTKRunner().Available()).To(BeTrue())
+	})
+	It("is false when HERDLE_TK points at a missing path", func() {
+		os.Setenv("HERDLE_TK", filepath.Join(GinkgoT().TempDir(), "nope"))
+		DeferCleanup(func() { os.Unsetenv("HERDLE_TK") })
+		Expect(vcs.NewTKRunner().Available()).To(BeFalse())
+	})
+})
+
 // tkRepo builds a temp repo dir with a .tickets/ dir, writes a `tk` stub that
 // emits the given query output, points HERDLE_TK at it, and returns the dir.
 func tkRepo(queryOut string) string {

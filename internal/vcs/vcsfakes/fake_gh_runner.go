@@ -8,6 +8,16 @@ import (
 )
 
 type FakeGHRunner struct {
+	AuthenticatedStub        func() bool
+	authenticatedMutex       sync.RWMutex
+	authenticatedArgsForCall []struct {
+	}
+	authenticatedReturns struct {
+		result1 bool
+	}
+	authenticatedReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	AvailableStub        func() bool
 	availableMutex       sync.RWMutex
 	availableArgsForCall []struct {
@@ -44,6 +54,59 @@ type FakeGHRunner struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeGHRunner) Authenticated() bool {
+	fake.authenticatedMutex.Lock()
+	ret, specificReturn := fake.authenticatedReturnsOnCall[len(fake.authenticatedArgsForCall)]
+	fake.authenticatedArgsForCall = append(fake.authenticatedArgsForCall, struct {
+	}{})
+	stub := fake.AuthenticatedStub
+	fakeReturns := fake.authenticatedReturns
+	fake.recordInvocation("Authenticated", []interface{}{})
+	fake.authenticatedMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeGHRunner) AuthenticatedCallCount() int {
+	fake.authenticatedMutex.RLock()
+	defer fake.authenticatedMutex.RUnlock()
+	return len(fake.authenticatedArgsForCall)
+}
+
+func (fake *FakeGHRunner) AuthenticatedCalls(stub func() bool) {
+	fake.authenticatedMutex.Lock()
+	defer fake.authenticatedMutex.Unlock()
+	fake.AuthenticatedStub = stub
+}
+
+func (fake *FakeGHRunner) AuthenticatedReturns(result1 bool) {
+	fake.authenticatedMutex.Lock()
+	defer fake.authenticatedMutex.Unlock()
+	fake.AuthenticatedStub = nil
+	fake.authenticatedReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeGHRunner) AuthenticatedReturnsOnCall(i int, result1 bool) {
+	fake.authenticatedMutex.Lock()
+	defer fake.authenticatedMutex.Unlock()
+	fake.AuthenticatedStub = nil
+	if fake.authenticatedReturnsOnCall == nil {
+		fake.authenticatedReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.authenticatedReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeGHRunner) Available() bool {

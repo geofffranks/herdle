@@ -8,6 +8,16 @@ import (
 )
 
 type FakeTKRunner struct {
+	AvailableStub        func() bool
+	availableMutex       sync.RWMutex
+	availableArgsForCall []struct {
+	}
+	availableReturns struct {
+		result1 bool
+	}
+	availableReturnsOnCall map[int]struct {
+		result1 bool
+	}
 	HasTicketsStub        func(string) (bool, error)
 	hasTicketsMutex       sync.RWMutex
 	hasTicketsArgsForCall []struct {
@@ -49,6 +59,59 @@ type FakeTKRunner struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeTKRunner) Available() bool {
+	fake.availableMutex.Lock()
+	ret, specificReturn := fake.availableReturnsOnCall[len(fake.availableArgsForCall)]
+	fake.availableArgsForCall = append(fake.availableArgsForCall, struct {
+	}{})
+	stub := fake.AvailableStub
+	fakeReturns := fake.availableReturns
+	fake.recordInvocation("Available", []interface{}{})
+	fake.availableMutex.Unlock()
+	if stub != nil {
+		return stub()
+	}
+	if specificReturn {
+		return ret.result1
+	}
+	return fakeReturns.result1
+}
+
+func (fake *FakeTKRunner) AvailableCallCount() int {
+	fake.availableMutex.RLock()
+	defer fake.availableMutex.RUnlock()
+	return len(fake.availableArgsForCall)
+}
+
+func (fake *FakeTKRunner) AvailableCalls(stub func() bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = stub
+}
+
+func (fake *FakeTKRunner) AvailableReturns(result1 bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = nil
+	fake.availableReturns = struct {
+		result1 bool
+	}{result1}
+}
+
+func (fake *FakeTKRunner) AvailableReturnsOnCall(i int, result1 bool) {
+	fake.availableMutex.Lock()
+	defer fake.availableMutex.Unlock()
+	fake.AvailableStub = nil
+	if fake.availableReturnsOnCall == nil {
+		fake.availableReturnsOnCall = make(map[int]struct {
+			result1 bool
+		})
+	}
+	fake.availableReturnsOnCall[i] = struct {
+		result1 bool
+	}{result1}
 }
 
 func (fake *FakeTKRunner) HasTickets(arg1 string) (bool, error) {

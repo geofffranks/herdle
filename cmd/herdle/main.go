@@ -30,11 +30,7 @@ func newApp() *cli.App {
 				},
 			},
 			projectCommand(),
-			{
-				Name:   "init",
-				Usage:  "write embedded skills, rules, and config",
-				Action: notImplemented("init", "S7"),
-			},
+			initCommand(),
 			{
 				Name:   "doctor",
 				Usage:  "diagnose the herdle setup",

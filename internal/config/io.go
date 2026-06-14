@@ -21,6 +21,13 @@ func baseDir(envVar, fallbackSubdir string) (string, error) {
 	return filepath.Join(home, fallbackSubdir), nil
 }
 
+// ClaudeDir returns the Claude Code base directory: ${CLAUDE_CONFIG_DIR:-$HOME/.claude}.
+// It is the parent of the skills/ and rules/ destinations herdle init writes, and
+// of the projects/ dir scanned for seeding.
+func ClaudeDir() (string, error) {
+	return baseDir("CLAUDE_CONFIG_DIR", ".claude")
+}
+
 // Path returns the config file location: $HERDLE_CONFIG if set, else
 // ${XDG_CONFIG_HOME:-$HOME/.config}/herdle/config.toml.
 func Path() (string, error) {

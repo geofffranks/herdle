@@ -105,6 +105,20 @@ var _ = Describe("baseDir-backed path helpers", func() {
 		Expect(p).To(Equal(filepath.Join(xdg, "wip", "projects")))
 	})
 
+	It("ClaudeDir() falls back to $HOME/.claude", func() {
+		p, err := config.ClaudeDir()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p).To(Equal(filepath.Join(fakeHome, ".claude")))
+	})
+
+	It("ClaudeDir() honours CLAUDE_CONFIG_DIR", func() {
+		claudeDir := GinkgoT().TempDir()
+		os.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
+		p, err := config.ClaudeDir()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p).To(Equal(claudeDir))
+	})
+
 	It("ClaudeProjectsDir() falls back to $HOME/.claude/projects", func() {
 		p, err := config.ClaudeProjectsDir()
 		Expect(err).NotTo(HaveOccurred())

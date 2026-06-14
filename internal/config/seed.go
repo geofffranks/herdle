@@ -14,7 +14,7 @@ import (
 // ClaudeProjectsDir returns the Claude Code projects directory:
 // ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects.
 func ClaudeProjectsDir() (string, error) {
-	base, err := baseDir("CLAUDE_CONFIG_DIR", ".claude")
+	base, err := ClaudeDir()
 	if err != nil {
 		return "", err
 	}

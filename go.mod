@@ -7,7 +7,7 @@ toolchain go1.26.3
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/onsi/ginkgo/v2 v2.30.0
-	github.com/onsi/gomega v1.41.0
+	github.com/onsi/gomega v1.42.0
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/term v0.44.0
 )

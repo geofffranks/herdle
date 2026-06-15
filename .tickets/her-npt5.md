@@ -1,9 +1,10 @@
 ---
 id: her-npt5
-status: open
+status: closed
 deps: [her-fogw, her-ju9h, her-6hgc]
 links: [her-x9jl]
-lifecycle: planned
+lifecycle: validated
+branch: her-npt5-s12-parity-validation
 created: 2026-06-12T20:40:38Z
 type: task
 priority: 2

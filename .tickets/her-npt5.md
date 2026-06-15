@@ -3,7 +3,7 @@ id: her-npt5
 status: open
 deps: [her-fogw, her-ju9h, her-6hgc]
 links: [her-x9jl]
-lifecycle: designed
+lifecycle: planned
 created: 2026-06-12T20:40:38Z
 type: task
 priority: 2

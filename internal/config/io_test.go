@@ -56,6 +56,21 @@ var _ = Describe("config IO", func() {
 		_, err := os.Stat(path)
 		Expect(err).NotTo(HaveOccurred())
 	})
+
+	It("errors and leaves no temp file when the rename fails", func() {
+		dir := GinkgoT().TempDir()
+		// A directory standing where the config file should be makes os.Rename
+		// (file -> existing dir) fail, exercising the cleanup branch.
+		path := filepath.Join(dir, "config.toml")
+		Expect(os.Mkdir(path, 0o750)).To(Succeed())
+
+		Expect((&config.Config{}).SaveTo(path)).NotTo(Succeed())
+
+		entries, err := os.ReadDir(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(entries).To(HaveLen(1)) // only the colliding dir; the temp file was removed
+		Expect(entries[0].Name()).To(Equal("config.toml"))
+	})
 })
 
 var _ = Describe("baseDir-backed path helpers", func() {

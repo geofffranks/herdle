@@ -67,6 +67,22 @@ var _ = Describe("Install", func() {
 		Expect(string(data)).To(Equal("flow"))
 		Expect(results).To(ContainElement(initcmd.Result{Path: skill, Action: initcmd.Overwritten}))
 	})
+
+	It("errors and leaves no temp file when the atomic rename fails", func() {
+		dir := GinkgoT().TempDir()
+		// A directory standing where a destination file should be makes the
+		// file->dir rename inside writeAtomic fail, exercising its cleanup branch.
+		collide := filepath.Join(dir, "skills", "herdle-tk-flow", "SKILL.md")
+		Expect(os.MkdirAll(collide, 0o750)).To(Succeed())
+
+		_, err := initcmd.Install(srcFS(), dir, true) // force -> attempts the write
+		Expect(err).To(HaveOccurred())
+
+		// No orphaned temp file is left beside the colliding destination.
+		leftovers, err := filepath.Glob(filepath.Join(filepath.Dir(collide), ".init-*.tmp"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(leftovers).To(BeEmpty())
+	})
 })
 
 var _ = Describe("Uninstall", func() {

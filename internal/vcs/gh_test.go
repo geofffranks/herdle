@@ -140,4 +140,15 @@ var _ = Describe("GHRunner.KnownHosts", func() {
 		writeHosts("# a comment\ngithub.example.com:\n    oauth_token: abc\n    git_protocol: ssh\n")
 		Expect(vcs.NewGHRunner().KnownHosts()).To(ConsistOf("github.com", "github.example.com"))
 	})
+
+	It("reads $XDG_CONFIG_HOME/gh/hosts.yml when GH_CONFIG_DIR is unset", func() {
+		xdg := GinkgoT().TempDir()
+		GinkgoT().Setenv("GH_CONFIG_DIR", "") // empty -> skip the GH_CONFIG_DIR branch
+		GinkgoT().Setenv("XDG_CONFIG_HOME", xdg)
+		ghDir := filepath.Join(xdg, "gh")
+		Expect(os.MkdirAll(ghDir, 0o750)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(ghDir, "hosts.yml"),
+			[]byte("github.enterprise.io:\n    user: z\n"), 0o600)).To(Succeed())
+		Expect(vcs.NewGHRunner().KnownHosts()).To(ConsistOf("github.com", "github.enterprise.io"))
+	})
 })

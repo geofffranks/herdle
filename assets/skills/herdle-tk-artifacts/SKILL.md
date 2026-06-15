@@ -52,12 +52,17 @@ Every implementation plan wraps its work in a fixed first and last task:
 
 **Finalize (last task):**
 
-- Request a code review — defer to `superpowers:requesting-code-review` — and
-  address its findings.
+- Run two code-review passes, applying fixes each time: dispatch a subagent
+  running `/code-review <branch> medium --fix`, then a second running
+  `/code-review <branch> high --fix`. Defer the review *process* to
+  `superpowers:requesting-code-review`; address any remaining findings.
 - Squash the branch's commits into one.
 - Set `lifecycle: pending-validation`.
 - Write the validation doc (`docs/superpowers/validation/...-validation.md`) with
   concrete acceptance steps.
+- Where possible, write a script that exercises as much of the validation doc as
+  it can, run it, and mark off the steps it covers before handing off. If those
+  validations all pass, set `lifecycle: validated`.
 - Do **not** open a PR here — opening a PR signals validated work. Leave that to
   `superpowers:finishing-a-development-branch`.
 

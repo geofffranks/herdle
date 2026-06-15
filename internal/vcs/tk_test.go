@@ -113,6 +113,12 @@ var _ = Describe("TKRunner", func() {
 		Expect(tickets).To(BeEmpty())
 	})
 
+	It("returns a parse error when a query row is not valid JSON", func() {
+		dir := tkRepo("{not valid json\n")
+		_, err := tk.Tickets(dir)
+		Expect(err).To(MatchError(ContainSubstring("parse")))
+	})
+
 	It("returns an error when tk query exits non-zero", func() {
 		dir := customTK("#!/bin/sh\necho 'db locked' >&2\nexit 1\n")
 		_, err := tk.Tickets(dir)

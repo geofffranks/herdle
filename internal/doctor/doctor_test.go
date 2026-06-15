@@ -258,4 +258,18 @@ var _ = Describe("doctor.Render", func() {
 		doctor.Render(&buf, []doctor.Result{{Name: "git", Status: doctor.OK, Detail: "found"}}, true)
 		Expect(buf.String()).To(ContainSubstring("\x1b[32m"))
 	})
+
+	It("renders the Warn glyph and remediation, with yellow ANSI when color is on", func() {
+		res := []doctor.Result{{Name: "gh", Status: doctor.Warn, Detail: "absent", Remediation: "install gh"}}
+
+		var plain bytes.Buffer
+		doctor.Render(&plain, res, false)
+		Expect(plain.String()).To(ContainSubstring("⚠ gh"))
+		Expect(plain.String()).To(ContainSubstring("→ install gh")) // remediation shown for non-OK
+		Expect(plain.String()).NotTo(ContainSubstring("\x1b["))
+
+		var color bytes.Buffer
+		doctor.Render(&color, res, true)
+		Expect(color.String()).To(ContainSubstring("\x1b[33m")) // yellow
+	})
 })

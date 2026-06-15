@@ -34,5 +34,18 @@ var _ = Describe("palette + formatters", func() {
 		It("returns empty for an empty flag note", func() {
 			Expect(newPalette(true).fflags(dashboard.FlagNote{})).To(Equal(""))
 		})
+
+		DescribeTable("maps each lifecycle state to its color",
+			func(state, code string) {
+				p := newPalette(true)
+				Expect(p.fstate(state)).To(Equal(code + pad(state, 19) + "\x1b[0m"))
+			},
+			Entry("validated -> green", "validated", "\x1b[32m"),
+			Entry("pending-validation -> yellow", "pending-validation", "\x1b[33m"),
+			Entry("in-development -> cyan", "in-development", "\x1b[36m"),
+			Entry("planned -> blue", "planned", "\x1b[34m"),
+			Entry("designed -> magenta", "designed", "\x1b[35m"),
+			Entry("unknown -> dim (default)", "mystery", "\x1b[2m"),
+		)
 	})
 })

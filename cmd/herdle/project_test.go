@@ -65,6 +65,16 @@ var _ = Describe("herdle project", func() {
 		Expect(c.Projects[0].Base).To(Equal("")) // cleared -> re-sparsed
 	})
 
+	It("treats a valueless flag before another flag as a clear, not a swallow", func() {
+		Expect(run("project", "add", repo, "--base", "dev")).To(Succeed())
+		// `--base` has no value (next token is `--remote`), so base is cleared
+		// while `--remote main` is still parsed correctly.
+		Expect(run("project", "set", filepath.Base(repo), "--base", "--remote", "main")).To(Succeed())
+		c, _ := config.LoadFrom(cfgPath)
+		Expect(c.Projects[0].Base).To(Equal(""))       // valueless --base cleared it
+		Expect(c.Projects[0].Remote).To(Equal("main")) // --remote main not consumed by --base
+	})
+
 	It("removes a project", func() {
 		Expect(run("project", "add", repo)).To(Succeed())
 		Expect(run("project", "rm", filepath.Base(repo))).To(Succeed())

@@ -64,6 +64,22 @@ var _ = Describe("SeedConfig", func() {
 		Expect(configPath).To(BeAnExistingFile())
 	})
 
+	It("returns the stat error (gate undecided) when configPath is inaccessible, without seeding", func() {
+		tmp := GinkgoT().TempDir()
+		// A regular file stands where a directory is expected, so os.Stat on
+		// configPath fails with ENOTDIR — a real error that is NOT fs.ErrNotExist.
+		notDir := filepath.Join(tmp, "afile")
+		Expect(os.WriteFile(notDir, []byte("x"), 0o600)).To(Succeed())
+		configPath := filepath.Join(notDir, "config.toml")
+
+		git := &vcsfakes.FakeGitRunner{}
+		n, ran, err := initcmd.SeedConfig(configPath, "/absent/wip", "/absent/projects", git)
+		Expect(err).To(HaveOccurred())               // surfaced, not swallowed as "absent"
+		Expect(ran).To(BeFalse())                    // gate did not open
+		Expect(n).To(Equal(0))                       // nothing seeded
+		Expect(git.RepoRootCallCount()).To(Equal(0)) // bailed before any discovery work
+	})
+
 	It("keeps the wip gh= slug when the same path is also discovered (migrate-first)", func() {
 		tmp := GinkgoT().TempDir()
 		configPath := filepath.Join(tmp, "config.toml")

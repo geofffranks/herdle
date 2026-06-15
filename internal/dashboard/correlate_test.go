@@ -77,5 +77,12 @@ var _ = Describe("correlation helpers", func() {
 		It("is true when a PR correlates by number", func() {
 			Expect(tkInAnyPR(dt("x", "gh-12", ""), prs)).To(BeTrue())
 		})
+		It("is true when a ref-less ticket's explicit branch equals a PR head", func() {
+			// The jtac-autolase case: no external-ref, only a branch: field.
+			Expect(tkInAnyPR(dt("x", "", "fix/12"), prs)).To(BeTrue())
+		})
+		It("is false when the explicit branch matches no PR head", func() {
+			Expect(tkInAnyPR(dt("x", "", "other"), prs)).To(BeFalse())
+		})
 	})
 })

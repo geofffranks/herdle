@@ -201,6 +201,20 @@ var _ = Describe("Engine WIP section", func() {
 			Title: "", Issue: "no external-ref / branch", IssueSev: dashboard.SevRed,
 		}))
 	})
+
+	It("flags a standalone in-flight tk whose explicit branch is missing", func() {
+		git.LocalBranchesReturns(nil, nil)
+		git.RemoteBranchesReturns(nil, nil)
+		tickets := eng.TicketsForTest([]vcs.Ticket{
+			{ID: "solo", Status: "in_progress", Branch: "feat/x"},
+		})
+		rows := eng.WIPRowsForTest(r, nil, tickets)
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0]).To(Equal(dashboard.WIPRow{
+			Lifecycle: "", Sync: dashboard.SyncNA, TKID: "solo", Branch: "(no branch)",
+			Title: "", Issue: "branch feat/x missing", IssueSev: dashboard.SevRed,
+		}))
+	})
 })
 
 var _ = Describe("Engine.Drilldown", func() {
@@ -329,6 +343,27 @@ var _ = Describe("Engine up-next + artifacts", func() {
 		Expect(ids).To(Equal([]string{"c", "b", "a"})) // planned(2) < planned(3) < designed
 	})
 
+	It("ranks unset and unknown lifecycles after planned/designed", func() {
+		// Equal priority, so ordering is purely readinessRank:
+		// planned(0) < designed(1) < "-"(2) < unknown/default(3).
+		ts := eng.TicketsForTest([]vcs.Ticket{
+			{ID: "unknown", Status: "open", Priority: 1},
+			{ID: "unset", Status: "open", Priority: 1},
+			{ID: "designed", Status: "open", Priority: 1},
+			{ID: "planned", Status: "open", Priority: 1},
+		})
+		ts[0] = eng.WithLifecycleForTest(ts[0], "?") // hits the default arm
+		ts[1] = eng.WithLifecycleForTest(ts[1], "-")
+		ts[2] = eng.WithLifecycleForTest(ts[2], "designed")
+		ts[3] = eng.WithLifecycleForTest(ts[3], "planned")
+		rows := eng.UpNextRowsForTest(ts)
+		var ids []string
+		for _, r := range rows {
+			ids = append(ids, r.TKID)
+		}
+		Expect(ids).To(Equal([]string{"planned", "designed", "unset", "unknown"}))
+	})
+
 	It("tags artifacts with a real tk id and leaves slug-only files untagged", func() {
 		eng.Glob = func(pattern string) ([]string, error) {
 			switch {
@@ -411,6 +446,13 @@ var _ = Describe("Engine sync helpers", func() {
 			git.RemoteBranchExistsReturns(false, nil)
 			s, _ := eng.WipSyncForTest("/r", "origin", "b")
 			Expect(s).To(Equal(dashboard.SyncNA))
+		})
+		It("is Bad/remote-only when the branch exists on the remote but not locally", func() {
+			git.LocalBranchExistsReturns(false, nil)
+			git.RemoteBranchExistsReturns(true, nil)
+			s, reason := eng.WipSyncForTest("/r", "origin", "b")
+			Expect(s).To(Equal(dashboard.SyncBad))
+			Expect(reason).To(Equal("remote only — no local branch"))
 		})
 		It("uses the configured remote for the remote check", func() {
 			_, _ = eng.WipSyncForTest("/r", "fork", "b")

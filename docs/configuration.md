@@ -84,15 +84,6 @@ remote.
 
 ---
 
-## Migration from wip
-
-On first run or when running `herdle init`, herdle checks for the legacy
-`${XDG_CONFIG_HOME:-$HOME/.config}/wip/projects` line-format file. If found,
-it imports the project list to seed the herdle config. This import is
-one-time; an existing herdle config is never clobbered.
-
----
-
 ## Environment Variables
 
 | Variable | Effect |

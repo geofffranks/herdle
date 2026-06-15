@@ -103,7 +103,7 @@ func runDrilldownName(c *cli.Context, git vcs.GitRunner, name string) error {
 		if errors.As(err, &amb) {
 			return fmt.Errorf("herdle: %w", amb)
 		}
-		return fmt.Errorf("herdle: no project named %q", name)
+		return fmt.Errorf("herdle: no project named '%s'", name)
 	}
 	r, _ := cfg.Resolve(cfg.Projects[idx], git)
 	return runDrilldown(c, git, r)

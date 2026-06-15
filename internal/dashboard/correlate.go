@@ -3,6 +3,7 @@ package dashboard
 import (
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/geofffranks/herdle/internal/vcs"
 )
@@ -27,14 +28,32 @@ func ghNum(ref string) string {
 }
 
 // branchHasNum mirrors wip's br_has_num: n (non-empty) appears as a whole-number
-// token in branch, so 59 matches "fix/59-x" but not "fix/590-x".
+// token in branch, so 59 matches "fix/59-x" but not "fix/590-x". It scans for the
+// token directly instead of compiling a regexp per call: branchHasNum runs in the
+// O(tickets×branches) and O(tickets×PRs) correlation loops, where a fresh
+// regexp.MustCompile each call was pure overhead (n is always a digit run from
+// ghNum, so the old regexp.QuoteMeta was a no-op).
 func branchHasNum(branch, n string) bool {
 	if n == "" {
 		return false
 	}
-	re := regexp.MustCompile(`(^|[^0-9])` + regexp.QuoteMeta(n) + `([^0-9]|$)`)
-	return re.MatchString(branch)
+	for from := 0; ; {
+		i := strings.Index(branch[from:], n)
+		if i < 0 {
+			return false
+		}
+		start := from + i
+		end := start + len(n)
+		leftOK := start == 0 || !isASCIIDigit(branch[start-1])
+		rightOK := end == len(branch) || !isASCIIDigit(branch[end])
+		if leftOK && rightOK {
+			return true
+		}
+		from = start + 1
+	}
 }
+
+func isASCIIDigit(b byte) bool { return b >= '0' && b <= '9' }
 
 // ticketMatchesPR is wip's tks_for_pr / standalone-tk correlation predicate:
 // a ticket correlates to a PR when its ghNum equals the PR number, the PR head

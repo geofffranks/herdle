@@ -32,6 +32,12 @@ var _ = Describe("Install", func() {
 		Expect(string(data)).To(Equal("flow"))
 		Expect(results).To(ContainElement(initcmd.Result{Path: skill, Action: initcmd.Written}))
 		Expect(filepath.Join(dir, "rules", "herdle.md")).To(BeAnExistingFile())
+
+		// S7 spec: installed artifacts are world-readable 0o644, not the 0o600
+		// os.CreateTemp defaults to.
+		info, err := os.Stat(skill)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o644)))
 	})
 
 	It("skips an existing file without force (preserving user edits)", func() {

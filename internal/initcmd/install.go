@@ -65,7 +65,9 @@ func Install(src fs.FS, claudeDir string, force bool) ([]Result, error) {
 }
 
 // writeAtomic writes data to path via a temp file + rename, creating parent dirs.
-// Mirrors config.SaveTo's house style; the temp file's 0o600 perms carry over.
+// Mirrors config.SaveTo's house style. os.CreateTemp makes the temp file 0o600,
+// so it is explicitly chmod'd to 0o644 before the rename — the spec (S7) installs
+// world-readable skills/rules, not owner-only files.
 func writeAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -73,6 +75,11 @@ func writeAtomic(path string, data []byte) error {
 	}
 	tmp, err := os.CreateTemp(dir, ".init-*.tmp")
 	if err != nil {
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {

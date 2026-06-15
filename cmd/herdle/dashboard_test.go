@@ -52,6 +52,6 @@ var _ = Describe("herdle --all (summary)", func() {
 		app.Writer = buf
 		err := app.Run([]string{"herdle", "someproject"})
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring(`no project named "someproject"`))
+		Expect(err.Error()).To(ContainSubstring(`no project named 'someproject'`))
 	})
 })

@@ -193,7 +193,7 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 		gh.AvailableReturns(false)
 		cfg := &config.Config{Projects: []config.Project{{Path: "/r", GH: "o/r"}}}
 		res, _ := eng.Summary(cfg, false)
-		Expect(res.GHAbsent).To(BeTrue())
+		Expect(res.AbsentForges).To(ContainElement("gh"))
 		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRNoSlug))
 		Expect(gh.PRListCallCount()).To(Equal(0))
 	})
@@ -205,7 +205,7 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 		git.RemoteHeadReturns("main", nil)
 		cfg := &config.Config{Projects: []config.Project{{Path: "/r"}}}
 		res, _ := eng.Summary(cfg, false)
-		Expect(res.GHAbsent).To(BeFalse())
+		Expect(res.AbsentForges).To(BeEmpty())
 		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRNoSlug))
 		Expect(gh.PRListCallCount()).To(Equal(0))
 	})
@@ -217,7 +217,7 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 		git.RemoteHeadReturns("main", nil)
 		cfg := &config.Config{Projects: []config.Project{{Path: "/r"}}}
 		res, _ := eng.Summary(cfg, false)
-		Expect(res.GHAbsent).To(BeFalse()) // no GitHub project -> no spurious "gh not found" note
+		Expect(res.AbsentForges).To(BeEmpty()) // no GitHub project -> no spurious "gh not found" note
 		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRNoSlug))
 	})
 

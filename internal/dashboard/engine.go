@@ -54,19 +54,24 @@ type SummaryRow struct {
 }
 
 // SummaryResult is the cross-project summary plus run-wide degradation state.
-// GHAbsent is true when the gh binary could not be located, so the renderer can
-// note that PR counts are hidden.
+// AbsentForges lists the forge CLIs ("gh", "glab") that at least one routed
+// project needed but could not be located, in a stable order, so the renderer can
+// note (by name) that PR/MR counts are hidden. Empty when every needed CLI is
+// present (or no project routes to a forge).
 type SummaryResult struct {
-	Rows     []SummaryRow
-	GHAbsent bool
+	Rows         []SummaryRow
+	AbsentForges []string
 }
 
 // Engine gathers dashboard state through the vcs runners. DirExists abstracts the
 // project-directory check so the engine is testable without touching disk; when
 // nil it defaults to an os.Stat-backed check.
 type Engine struct {
-	Git       vcs.GitRunner
-	GH        vcs.GHRunner
+	Git vcs.GitRunner
+	GH  vcs.GHRunner
+	// GL is the GitLab (glab) forge client. Optional: when nil, GitLab remotes are
+	// treated as having no forge (git+tk only), exactly as before GitLab support.
+	GL        vcs.GLRunner
 	TK        vcs.TKRunner
 	DirExists func(path string) bool
 	// Glob abstracts filepath.Glob so disk-touching gather (lifecycle derivation,

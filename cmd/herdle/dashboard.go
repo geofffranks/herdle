@@ -110,7 +110,7 @@ func runDrilldownName(c *cli.Context, git vcs.GitRunner, name string) error {
 }
 
 func runDrilldown(c *cli.Context, git vcs.GitRunner, r config.Resolved) error {
-	eng := dashboard.Engine{Git: git, GH: vcs.NewGHRunner(), TK: vcs.NewTKRunner()}
+	eng := dashboard.Engine{Git: git, GH: vcs.NewGHRunner(), GL: vcs.NewGLRunner(), TK: vcs.NewTKRunner()}
 	d, err := eng.Drilldown(r, c.Bool("fetch"))
 	if err != nil {
 		return err
@@ -125,10 +125,10 @@ func runSummary(c *cli.Context, git vcs.GitRunner) error {
 	if err != nil {
 		return err
 	}
-	eng := dashboard.Engine{Git: git, GH: vcs.NewGHRunner(), TK: vcs.NewTKRunner()}
+	eng := dashboard.Engine{Git: git, GH: vcs.NewGHRunner(), GL: vcs.NewGLRunner(), TK: vcs.NewTKRunner()}
 	res, err := eng.Summary(cfg, c.Bool("fetch"))
 	if err != nil {
 		return err
 	}
-	return render.Summary(c.App.Writer, res.Rows, c.Bool("fetch"), res.GHAbsent)
+	return render.Summary(c.App.Writer, res.Rows, c.Bool("fetch"), res.AbsentForges)
 }

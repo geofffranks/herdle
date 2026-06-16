@@ -56,18 +56,33 @@ func (c *Config) Resolve(p Project, git vcs.GitRunner) (Resolved, error) {
 	// integration: explicit only (personal branch; never autodetected)
 	r.Integration = p.Integration
 
-	// slug: explicit gh -> derived from the remote URL -> ""
-	r.Slug = p.GH
-	r.SlugExplicit = p.GH != ""
-	if r.Slug == "" && r.Remote != "" {
+	// slug: explicit gh= (legacy, GitHub) -> explicit slug= (forge by host) ->
+	// derived from the remote URL -> "".
+	switch {
+	case p.GH != "":
+		r.Slug = p.GH
+		r.SlugExplicit = true
+	case p.Slug != "":
+		r.Slug = p.Slug
+		r.SlugExplicit = true
+	}
+
+	// Host detection (and slug derivation when no override is set) runs whenever a
+	// remote exists, EXCEPT for a legacy gh= override — that is GitHub by
+	// definition and needs no host probe, so it leaves RemoteHost empty and skips
+	// the extra RemoteURL call. A neutral slug= override still probes the host so
+	// the dashboard can route it to GitHub vs GitLab.
+	if p.GH == "" && r.Remote != "" {
 		// Reuse the URL cached during autodetection if available; otherwise fetch.
 		url := autodetectedURL
 		if url == "" {
 			url, _ = git.RemoteURL(p.Path, r.Remote)
 		}
 		if url != "" {
-			r.Slug = slugFromURL(url)
 			r.RemoteHost = hostFromURL(url)
+			if r.Slug == "" {
+				r.Slug = slugFromURL(url)
+			}
 		}
 	}
 
@@ -116,9 +131,11 @@ func stripPort(host string) string {
 	return host
 }
 
-// slugFromURL extracts owner/repo from a git remote URL, mirroring wip's
-// slug_from_url: strip the scheme+host (git@host: or scheme://host/) and a
-// trailing .git. Returns "" if the result is not owner/repo-shaped.
+// slugFromURL extracts the project path from a git remote URL: strip the
+// scheme+host (git@host: or scheme://host/) and a trailing .git. The result is
+// owner/repo for GitHub, but GitLab allows arbitrarily nested groups
+// (group/subgroup/.../project), so any path of two or more non-empty segments is
+// accepted. Returns "" when the result is not path-shaped.
 func slugFromURL(url string) string {
 	s := strings.TrimSpace(url)
 	switch {
@@ -135,8 +152,17 @@ func slugFromURL(url string) string {
 		s = s[i+1:]
 	}
 	s = strings.TrimSuffix(s, ".git")
-	if strings.Count(s, "/") != 1 || strings.HasPrefix(s, "/") || strings.HasSuffix(s, "/") {
+	// Require at least owner/repo (two segments). GitLab nested groups push this
+	// deeper (group/subgroup/.../project); reject only malformed paths — a leading
+	// or trailing slash, or any empty segment (e.g. "a//b").
+	parts := strings.Split(s, "/")
+	if len(parts) < 2 {
 		return ""
+	}
+	for _, p := range parts {
+		if p == "" {
+			return ""
+		}
 	}
 	return s
 }

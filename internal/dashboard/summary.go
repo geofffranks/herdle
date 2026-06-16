@@ -1,40 +1,84 @@
 package dashboard
 
-import "github.com/geofffranks/herdle/internal/config"
+import (
+	"sync"
+
+	"github.com/geofffranks/herdle/internal/config"
+)
+
+// maxSummaryConcurrency bounds how many projects are gathered at once. Each
+// project's gather is dominated by a network round-trip to its forge (gh/glab),
+// so concurrency collapses wall time from the sum of those calls to roughly the
+// slowest one; the cap keeps the subprocess/connection count sane for users with
+// many repos.
+const maxSummaryConcurrency = 12
 
 // Summary gathers one SummaryRow per configured project, in config file order,
 // mirroring wip's summary(). Projects whose path does not exist on disk are
-// skipped. gh availability and the known GitHub hosts are resolved once; PR cells
-// degrade to "-" (PRNoSlug) when gh is absent or the remote is not a GitHub host,
-// so no "?" appears in those cases. When fetch is true each surviving project is
-// git-fetched first (best-effort).
+// skipped. The host->forge routing (GitHub via gh, GitLab via glab) is resolved
+// once; PR cells degrade to "-" (PRNoSlug) when the project's forge CLI is absent
+// or the remote belongs to no configured forge, so no "?" appears in those cases.
+// When fetch is true each surviving project is git-fetched first (best-effort).
+//
+// Per-project gather runs concurrently (bounded by maxSummaryConcurrency): the
+// work is network-bound and independent, so this is the difference between a
+// snappy dashboard and one that waits on every forge call in series. Row order is
+// preserved by writing into a pre-sized slice keyed by position.
 func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
-	ghAvail := e.GH.Available()
-	known := e.knownGitHubHosts()
-	var rows []SummaryRow
-	anyGitHub := false
+	rt := e.routing()
+
+	// Pre-filter to existing projects (cheap local stat), preserving config order.
+	var projects []config.Project
 	for _, p := range cfg.Projects {
-		if !e.dirExists(p.Path) {
-			continue
+		if e.dirExists(p.Path) {
+			projects = append(projects, p)
 		}
-		if fetch {
-			_ = e.Git.Fetch(p.Path)
-		}
-		r, _ := cfg.Resolve(p, e.Git) // error reserved for future hard failures
-		slug, isGitHub := effectiveSlug(r, known)
-		if isGitHub {
-			anyGitHub = true
-		}
-		rows = append(rows, SummaryRow{
-			Name: r.Name,
-			Head: e.head(p.Path),
-			PR:   e.prCell(slug, isGitHub, ghAvail),
-			TK:   e.tkCell(p.Path),
-		})
 	}
-	// Note gh-absence only when at least one project is a GitHub remote that would
-	// otherwise show PR counts; with no GitHub projects the note would be spurious.
-	return SummaryResult{Rows: rows, GHAbsent: !ghAvail && anyGitHub}, nil
+
+	rows := make([]SummaryRow, len(projects))
+	var (
+		mu     sync.Mutex
+		absent = map[string]bool{}
+		wg     sync.WaitGroup
+		sem    = make(chan struct{}, maxSummaryConcurrency)
+	)
+	for i, p := range projects {
+		wg.Add(1)
+		go func(i int, p config.Project) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if fetch {
+				_ = e.Git.Fetch(p.Path)
+			}
+			r, _ := cfg.Resolve(p, e.Git) // error reserved for future hard failures
+			client, slug, kind, isForge := e.selectForge(r, rt)
+			avail := isForge && client.Available()
+			if isForge && !avail {
+				mu.Lock()
+				absent[forgeCLI(kind)] = true
+				mu.Unlock()
+			}
+			rows[i] = SummaryRow{
+				Name: r.Name,
+				Head: e.head(p.Path),
+				PR:   e.prCell(client, slug, isForge && avail),
+				TK:   e.tkCell(p.Path),
+			}
+		}(i, p)
+	}
+	wg.Wait()
+
+	// Name the missing CLI(s) only when at least one project routes to a forge that
+	// would otherwise show PR/MR counts; otherwise the note would be spurious.
+	var absentForges []string
+	for _, cli := range []string{"gh", "glab"} { // stable order
+		if absent[cli] {
+			absentForges = append(absentForges, cli)
+		}
+	}
+	return SummaryResult{Rows: rows, AbsentForges: absentForges}, nil
 }
 
 // head mirrors wip's git_head.
@@ -51,14 +95,16 @@ func (e Engine) head(path string) HeadInfo {
 	return h
 }
 
-// prCell mirrors wip's pr_count, extended for graceful degradation: when gh is
-// absent or the project has no GitHub remote, the cell is PRNoSlug ("-") and gh
-// is not called. A GitHub project whose gh call fails is PRUnknown ("?").
-func (e Engine) prCell(slug string, isGitHub, ghAvail bool) PRCell {
-	if !ghAvail || !isGitHub || slug == "" {
+// prCell mirrors wip's pr_count, extended for graceful degradation: when the
+// project's forge CLI is absent or the project routes to no forge, the cell is
+// PRNoSlug ("-") and the forge is not called. A forge project whose list call
+// fails is PRUnknown ("?"). query is true only when a forge client is available
+// and a slug resolved.
+func (e Engine) prCell(client forgeClient, slug string, query bool) PRCell {
+	if !query || client == nil || slug == "" {
 		return PRCell{State: PRNoSlug}
 	}
-	prs, err := e.GH.PRList(slug, "open")
+	prs, err := client.PRList(slug, "open")
 	if err != nil {
 		return PRCell{State: PRUnknown}
 	}

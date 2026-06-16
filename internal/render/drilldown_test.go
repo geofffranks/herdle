@@ -62,6 +62,23 @@ var _ = Describe("render.Drilldown", func() {
 		Expect(buf.String()).To(ContainSubstring("(gh unavailable)"))
 	})
 
+	It("uses GitLab wording (glab / MR) when the forge is gitlab", func() {
+		d := sampleDrilldown
+		d.Forge = "gitlab"
+		d.OpenPRs = nil
+		d.GHUnavailable = true
+		d.GHAbsent = true
+		var buf bytes.Buffer
+		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
+		out := buf.String()
+		Expect(out).To(ContainSubstring("— open MRs —"))
+		Expect(out).To(ContainSubstring("(glab unavailable)"))
+		Expect(out).To(ContainSubstring("glab: not found — MR sections hidden"))
+		Expect(out).To(ContainSubstring("MR status:"))
+		Expect(out).NotTo(ContainSubstring("(gh unavailable)"))
+		Expect(out).NotTo(ContainSubstring("PR status:"))
+	})
+
 	It("hides empty sections (no slug, nothing to show)", func() {
 		d := dashboard.Drilldown{Name: "x", Path: "/x", Head: dashboard.HeadInfo{Branch: "main"}}
 		var buf bytes.Buffer

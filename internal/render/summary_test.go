@@ -42,7 +42,7 @@ var sampleRows = []dashboard.SummaryRow{
 
 func renderSummary(fetched bool) string {
 	var buf bytes.Buffer
-	Expect(render.Summary(&buf, sampleRows, fetched, false)).To(Succeed())
+	Expect(render.Summary(&buf, sampleRows, fetched, nil)).To(Succeed())
 	return buf.String()
 }
 
@@ -64,7 +64,7 @@ func matchesGolden(name, got string) {
 var _ = Describe("render.Summary", func() {
 	It("with zero rows emits the header, separator, and footer only", func() {
 		var buf bytes.Buffer
-		Expect(render.Summary(&buf, nil, false, false)).To(Succeed())
+		Expect(render.Summary(&buf, nil, false, nil)).To(Succeed())
 		matchesGolden("summary_empty.golden", buf.String())
 	})
 
@@ -76,14 +76,18 @@ var _ = Describe("render.Summary", func() {
 		matchesGolden("summary_fetched.golden", renderSummary(true))
 	})
 
-	It("appends a gh-absent note to the footer when ghAbsent is true", func() {
+	It("names the absent forge CLIs in the footer (one or many)", func() {
 		var buf bytes.Buffer
-		Expect(render.Summary(&buf, sampleRows, false, true)).To(Succeed())
-		Expect(buf.String()).To(ContainSubstring("gh not found — PR counts hidden"))
+		Expect(render.Summary(&buf, sampleRows, false, []string{"glab"})).To(Succeed())
+		Expect(buf.String()).To(ContainSubstring("glab not found — PR/MR counts hidden"))
+
+		buf.Reset()
+		Expect(render.Summary(&buf, sampleRows, false, []string{"gh", "glab"})).To(Succeed())
+		Expect(buf.String()).To(ContainSubstring("gh/glab not found — PR/MR counts hidden"))
 	})
 
-	It("omits the gh note when gh is available", func() {
-		Expect(renderSummary(false)).NotTo(ContainSubstring("gh not found"))
+	It("omits the forge note when nothing is absent", func() {
+		Expect(renderSummary(false)).NotTo(ContainSubstring("not found"))
 	})
 
 	It("emits byte-identical output under forced color and NO_COLOR (no leak)", func() {

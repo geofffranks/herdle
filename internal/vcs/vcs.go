@@ -1,6 +1,7 @@
-// Package vcs wraps the git, gh, and tk binaries behind typed interfaces so the
-// dashboard can be exercised against fakes with no real repo, network, or tools.
-// Binary paths are overridable via HERDLE_GIT / HERDLE_GH / HERDLE_TK.
+// Package vcs wraps the git, gh, glab, and tk binaries behind typed interfaces so
+// the dashboard can be exercised against fakes with no real repo, network, or
+// tools. Binary paths are overridable via HERDLE_GIT / HERDLE_GH / HERDLE_GLAB /
+// HERDLE_TK.
 package vcs
 
 import "errors"
@@ -96,6 +97,32 @@ type GHRunner interface {
 	KnownHosts() []string
 	// Authenticated reports whether `gh auth status` exits 0 (logged into at
 	// least one host). False when gh is absent — callers gate on Available first.
+	Authenticated() bool
+}
+
+//counterfeiter:generate -o vcsfakes/fake_gl_runner.go . GLRunner
+
+// GLRunner wraps `glab` (the GitLab CLI), supporting gitlab.com and self-hosted
+// instances. Its method set mirrors GHRunner so both satisfy the dashboard's
+// forge client, but it targets merge requests rather than pull requests and maps
+// them onto the same forge-neutral PR type. Binary path overridable via
+// HERDLE_GLAB.
+type GLRunner interface {
+	// PRList returns the @me-authored merge requests for slug in the given state
+	// ("open" | "all"), normalized onto the shared PR type. slug is glab's -R
+	// value: GROUP/PROJECT (or nested GROUP/SUBGROUP/PROJECT) for gitlab.com, or a
+	// full https URL for a self-hosted host. The impl retries once and validates a
+	// JSON-array shape before trusting an empty result.
+	PRList(slug, state string) ([]PR, error)
+	// Available reports whether the glab binary can be located (HERDLE_GLAB
+	// override, else PATH). It does not check auth — see Authenticated.
+	Available() bool
+	// KnownHosts returns the GitLab hosts glab is configured for — the keys under
+	// the top-level `hosts:` map in glab's config.yml — always unioned with
+	// "gitlab.com". A missing or unreadable config yields just {"gitlab.com"}.
+	KnownHosts() []string
+	// Authenticated reports whether `glab auth status` exits 0 (logged into at
+	// least one host). False when glab is absent — callers gate on Available first.
 	Authenticated() bool
 }
 

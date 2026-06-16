@@ -47,6 +47,28 @@ func checkGHAuth(env Env) Result {
 		Remediation: "authenticate gh: gh auth login"}
 }
 
+func checkGLab(env Env) Result {
+	if env.GL == nil {
+		return Result{Name: "glab", Status: OK, Detail: "skipped (not configured)"}
+	}
+	if env.GL.Available() {
+		return Result{Name: "glab", Status: OK, Detail: "found"}
+	}
+	return Result{Name: "glab", Status: Warn, Detail: "not found (optional)",
+		Remediation: "install glab to enable GitLab MR features: brew install glab"}
+}
+
+func checkGLabAuth(env Env) Result {
+	if env.GL == nil || !env.GL.Available() {
+		return Result{Name: "glab auth", Status: OK, Detail: "skipped (glab not installed)"}
+	}
+	if env.GL.Authenticated() {
+		return Result{Name: "glab auth", Status: OK, Detail: "authenticated"}
+	}
+	return Result{Name: "glab auth", Status: Warn, Detail: "not authenticated",
+		Remediation: "authenticate glab: glab auth login (use --hostname for self-hosted GitLab)"}
+}
+
 func checkSuperpowers(env Env) Result {
 	dir := filepath.Join(env.ClaudeDir, "plugins")
 	found, scanned := scanForDir(dir, "superpowers", 6)

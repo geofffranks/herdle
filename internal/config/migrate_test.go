@@ -29,6 +29,16 @@ var _ = Describe("MigrateWipProjects", func() {
 		}))
 	})
 
+	It("parses slug= overrides alongside gh=", func() {
+		p := writeWip("/work/a slug=grp/proj\n/work/b gh=owner/b\n")
+		got, err := config.MigrateWipProjects(p)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal([]config.Project{
+			{Path: "/work/a", Slug: "grp/proj"},
+			{Path: "/work/b", GH: "owner/b"},
+		}))
+	})
+
 	It("returns an empty slice (no error) for a missing file", func() {
 		got, err := config.MigrateWipProjects(filepath.Join(GinkgoT().TempDir(), "absent"))
 		Expect(err).NotTo(HaveOccurred())

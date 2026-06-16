@@ -39,9 +39,12 @@ func (e Engine) WithLifecycleForTest(t dticket, lc string) dticket { t.EffLifecy
 func (e Engine) UpNextRowsForTest(t []dticket) []UpNextRow     { return upNextRows(t) }
 func (e Engine) ArtifactRowsForTest(path string) []ArtifactRow { return e.artifactRows(path) }
 
-// EffectiveSlugForTest exposes effectiveSlug to the _test package.
-func EffectiveSlugForTest(r config.Resolved, known map[string]bool) (string, bool) {
-	return effectiveSlug(r, known)
+// SelectForgeForTest exposes the host->forge routing to the _test package,
+// returning the resolved slug, forge kind ("github"/"gitlab"/""), and whether
+// PR/MR features apply. It builds the routing from the engine's wired forges.
+func (e Engine) SelectForgeForTest(r config.Resolved) (slug, kind string, ok bool) {
+	_, slug, kind, ok = e.selectForge(r, e.routing())
+	return slug, kind, ok
 }
 
 // ClassifyMergeForTest / MergeNoteForTest expose the merge-status helpers.

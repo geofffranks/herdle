@@ -49,11 +49,14 @@ func goodEnv() doctor.Env {
 	gh := &vcsfakes.FakeGHRunner{}
 	gh.AvailableReturns(true)
 	gh.AuthenticatedReturns(true)
+	gl := &vcsfakes.FakeGLRunner{}
+	gl.AvailableReturns(true)
+	gl.AuthenticatedReturns(true)
 	tk := &vcsfakes.FakeTKRunner{}
 	tk.AvailableReturns(true)
 
 	return doctor.Env{
-		Git: git, GH: gh, TK: tk,
+		Git: git, GH: gh, GL: gl, TK: tk,
 		Assets:     assetsFS,
 		ClaudeDir:  claude,
 		ConfigPath: cfgPath,
@@ -119,6 +122,44 @@ var _ = Describe("doctor gh + gh auth", func() {
 		auth := find(rs, "gh auth")
 		Expect(auth.Status).To(Equal(doctor.Warn))
 		Expect(auth.Remediation).To(ContainSubstring("gh auth login"))
+	})
+})
+
+var _ = Describe("doctor glab + glab auth", func() {
+	It("glab OK + auth OK when available and authenticated", func() {
+		rs := doctor.Run(goodEnv())
+		Expect(find(rs, "glab").Status).To(Equal(doctor.OK))
+		Expect(find(rs, "glab auth").Status).To(Equal(doctor.OK))
+	})
+
+	It("glab Warn when absent, and auth row skipped-OK (not double-counted)", func() {
+		env := goodEnv()
+		env.GL.(*vcsfakes.FakeGLRunner).AvailableReturns(false)
+		rs := doctor.Run(env)
+		Expect(find(rs, "glab").Status).To(Equal(doctor.Warn))
+		Expect(find(rs, "glab").Remediation).To(ContainSubstring("brew install glab"))
+		auth := find(rs, "glab auth")
+		Expect(auth.Status).To(Equal(doctor.OK))
+		Expect(auth.Detail).To(ContainSubstring("skipped"))
+	})
+
+	It("glab OK but auth Warn when present and not authenticated", func() {
+		env := goodEnv()
+		env.GL.(*vcsfakes.FakeGLRunner).AuthenticatedReturns(false)
+		rs := doctor.Run(env)
+		Expect(find(rs, "glab").Status).To(Equal(doctor.OK))
+		auth := find(rs, "glab auth")
+		Expect(auth.Status).To(Equal(doctor.Warn))
+		Expect(auth.Remediation).To(ContainSubstring("glab auth login"))
+	})
+
+	It("treats a nil GL runner as skipped-OK (no panic, no failure)", func() {
+		env := goodEnv()
+		env.GL = nil
+		rs := doctor.Run(env)
+		Expect(find(rs, "glab").Status).To(Equal(doctor.OK))
+		Expect(find(rs, "glab").Detail).To(ContainSubstring("skipped"))
+		Expect(find(rs, "glab auth").Status).To(Equal(doctor.OK))
 	})
 })
 

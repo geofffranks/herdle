@@ -93,6 +93,11 @@ var _ = Describe("slugFromURL (via Resolve)", func() {
 		"https://github.com/o/r":     "o/r",
 		"ssh://git@host/o/r.git":     "o/r",
 		"not-a-url":                  "",
+		// GitLab nested groups: any depth >= 2 segments is a valid project path.
+		"git@gitlab.rivianvw.io:vt/ps/infra/rcs/rivian_crypto_service.git": "vt/ps/infra/rcs/rivian_crypto_service",
+		"https://gitlab.com/group/subgroup/project.git":                    "group/subgroup/project",
+		"git@host:onlyone":  "", // single segment -> not a slug
+		"https://host/a//b": "", // empty segment -> rejected
 	}
 	for url, want := range cases {
 		url, want := url, want
@@ -151,6 +156,31 @@ var _ = Describe("Config.Resolve — S6 additions", func() {
 		Expect(r.Slug).To(Equal("canon/repo"))
 		Expect(r.SlugExplicit).To(BeTrue())
 		Expect(r.RemoteHost).To(Equal(""))
+	})
+
+	It("marks SlugExplicit for a neutral slug= override AND still resolves RemoteHost", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("git@gitlab.enterprise.io:grp/proj.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin", Slug: "grp/override"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.Slug).To(Equal("grp/override")) // explicit value wins
+		Expect(r.SlugExplicit).To(BeTrue())
+		Expect(r.RemoteHost).To(Equal("gitlab.enterprise.io")) // still probed, for forge routing
+	})
+
+	It("prefers gh= over slug= and skips the host probe for the legacy override", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{
+			Path: "/repo", Remote: "fork", GH: "o/r", Slug: "grp/proj",
+		}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.Slug).To(Equal("o/r"))
+		Expect(r.SlugExplicit).To(BeTrue())
+		Expect(r.RemoteHost).To(Equal("")) // gh= is GitHub by definition: no host probe
+		Expect(git.RemoteURLCallCount()).To(Equal(0))
 	})
 
 	It("strips the port from a scheme://host:port remote URL", func() {

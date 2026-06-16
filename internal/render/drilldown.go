@@ -27,7 +27,7 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 		out.line(p.hdr("— open PRs —"))
 		for _, r := range d.OpenPRs {
 			out.line("  " + p.fpr(r.Number) + " " + p.fbranch(r.Head, 30) + " " +
-				p.fdesc(r.Title, 40) + "  " + p.ftklist(r.TKs) + "  " + p.fflags(r.Note))
+				p.fdesc(r.Title, 40) + "  " + p.ftklist(r.TKs) + "  " + p.fnotes(r.Notes))
 		}
 	} else if d.HasSlug && d.GHUnavailable {
 		out.line("")
@@ -84,6 +84,9 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 	out.line("")
 	out.line(fmt.Sprintf("sync: %s✓%s local==remote · %s✗%s differs (see issues) · %s·%s n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned",
 		p.grn, p.rst, p.red, p.rst, p.dim, p.rst))
+	out.line("PR status: " + p.grn + "✓ ready to merge" + p.rst + " · " +
+		p.red + "✗ conflicts" + p.rst + " · " + p.red + "✗ checks failing" + p.rst + " · " +
+		p.yel + "✎ changes requested" + p.rst + " · " + p.dim + "— pending/draft/computing" + p.rst)
 	out.line(fmt.Sprintf("lifecycle: %s-%s (not started) → %sdesigned%s → %splanned%s → %sin-development%s → %spending-validation%s → %svalidated%s",
 		p.dim, p.rst, p.mag, p.rst, p.blu, p.rst, p.cyn, p.rst, p.yel, p.rst, p.grn, p.rst))
 	if d.GHAbsent {

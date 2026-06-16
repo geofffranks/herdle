@@ -89,7 +89,22 @@ var _ = Describe("Engine PR sections", func() {
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Number).To(Equal(5))
 		Expect(rows[0].TKs).To(Equal([]string{"t1"}))
-		Expect(rows[0].Note).To(Equal(dashboard.FlagNote{Text: "origin only", Sev: dashboard.SevNone}))
+		Expect(rows[0].Notes).To(Equal([]dashboard.FlagNote{
+			{Text: "—", Sev: dashboard.SevNone},           // neutral: no merge fields set
+			{Text: "origin only", Sev: dashboard.SevNone}, // sync note (not green) is appended
+		}))
+	})
+
+	It("leads the notes with merge status and appends only non-green sync notes", func() {
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		git.DivergenceReturns(0, 0, nil) // in sync -> green -> dropped
+		prs := []vcs.PR{{Number: 7, State: "OPEN", HeadRefName: "feat", Title: "x", Mergeable: "MERGEABLE"}}
+		rows := eng.OpenPRRowsForTest(prs, nil, "/r", "origin")
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0].Notes).To(Equal([]dashboard.FlagNote{
+			{Text: "✓ ready to merge", Sev: dashboard.SevGreen}, // only the merge note; "✓ in sync" dropped
+		}))
 	})
 
 	It("flags merged PRs needing cleanup (local/origin branch, open tk)", func() {

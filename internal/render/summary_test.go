@@ -23,7 +23,7 @@ var sampleRows = []dashboard.SummaryRow{
 	{
 		Name: "dcs-retribution",
 		Head: dashboard.HeadInfo{Branch: "fix/123", Dirty: true, Ahead: 2, Behind: 1},
-		PR:   dashboard.PRCell{State: dashboard.PRCounted, Count: 3},
+		PR:   dashboard.PRCell{State: dashboard.PRCounted, Count: 3, Attention: 2, Ready: 1},
 		TK:   dashboard.TKCell{Present: true},
 	},
 	{
@@ -31,6 +31,12 @@ var sampleRows = []dashboard.SummaryRow{
 		Head: dashboard.HeadInfo{Branch: ""},
 		PR:   dashboard.PRCell{State: dashboard.PRUnknown},
 		TK:   dashboard.TKCell{Present: false},
+	},
+	{
+		Name: "quiet",
+		Head: dashboard.HeadInfo{Branch: "main"},
+		PR:   dashboard.PRCell{State: dashboard.PRCounted, Count: 2}, // all neutral -> merge "-"
+		TK:   dashboard.TKCell{Present: true, Ready: 1},
 	},
 }
 

@@ -73,6 +73,35 @@ echo '[]'
 		_, err := gh.PRList("o/r", "open")
 		Expect(err).To(HaveOccurred())
 	})
+
+	It("parses the merge/review/draft/check fields incl. a mixed rollup", func() {
+		ghStub(`#!/bin/sh
+echo '[{"number":12,"state":"OPEN","headRefName":"feat/x","title":"Add x","mergeable":"CONFLICTING","reviewDecision":"CHANGES_REQUESTED","isDraft":true,"statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE","name":"build"},{"__typename":"StatusContext","state":"SUCCESS","context":"ci/lint"}]}]'
+`)
+		prs, err := gh.PRList("o/r", "all")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(prs).To(HaveLen(1))
+		Expect(prs[0].Mergeable).To(Equal("CONFLICTING"))
+		Expect(prs[0].ReviewDecision).To(Equal("CHANGES_REQUESTED"))
+		Expect(prs[0].IsDraft).To(BeTrue())
+		Expect(prs[0].StatusCheckRollup).To(HaveLen(2))
+		Expect(prs[0].StatusCheckRollup[0].Conclusion).To(Equal("FAILURE"))
+		Expect(prs[0].StatusCheckRollup[1].State).To(Equal("SUCCESS"))
+	})
+
+	It("requests the merge/review/check fields from gh", func() {
+		dir := ghStub(`#!/bin/sh
+echo "$@" > "$0.args"
+echo '[]'
+`)
+		_, err := gh.PRList("o/r", "open")
+		Expect(err).NotTo(HaveOccurred())
+		args, readErr := os.ReadFile(filepath.Join(dir, "gh.args"))
+		Expect(readErr).NotTo(HaveOccurred())
+		for _, f := range []string{"mergeable", "reviewDecision", "isDraft", "statusCheckRollup"} {
+			Expect(string(args)).To(ContainSubstring(f))
+		}
+	})
 })
 
 var _ = Describe("GHRunner.Available", func() {

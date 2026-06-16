@@ -100,6 +100,18 @@ var _ = Describe("Engine.Summary", func() {
 			res, _ := eng.Summary(cfg, false)
 			Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRUnknown))
 		})
+
+		It("counts ready and needs-attention open PRs (neutral uncounted)", func() {
+			gh.PRListReturns([]vcs.PR{
+				{Number: 1, State: "OPEN", Mergeable: "MERGEABLE"},                                      // ready
+				{Number: 2, State: "OPEN", Mergeable: "CONFLICTING"},                                    // attention
+				{Number: 3, State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "CHANGES_REQUESTED"}, // attention
+				{Number: 4, State: "OPEN", IsDraft: true},                                               // neutral
+			}, nil)
+			cfg := &config.Config{Projects: []config.Project{{Path: "/r", GH: "o/r"}}}
+			res, _ := eng.Summary(cfg, false)
+			Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 4, Attention: 2, Ready: 1}))
+		})
 	})
 
 	Describe("tk cell", func() {

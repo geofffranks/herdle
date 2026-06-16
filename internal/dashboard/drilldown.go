@@ -40,7 +40,7 @@ type PRRow struct {
 	Head   string
 	Title  string
 	TKs    []string
-	Note   FlagNote
+	Notes  []FlagNote // merge status first; non-green sync note appended
 }
 
 type MergedRow struct {
@@ -157,12 +157,16 @@ func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path, remote string)
 		if pr.State != "OPEN" {
 			continue
 		}
+		notes := []FlagNote{mergeNote(classifyMerge(pr))}
+		if sync := e.syncNote(path, remote, pr.HeadRefName); sync.Sev != SevGreen {
+			notes = append(notes, sync)
+		}
 		rows = append(rows, PRRow{
 			Number: pr.Number,
 			Head:   pr.HeadRefName,
 			Title:  pr.Title,
 			TKs:    tksForPR(tickets, pr.Number, pr.HeadRefName),
-			Note:   e.syncNote(path, remote, pr.HeadRefName),
+			Notes:  notes,
 		})
 	}
 	return rows

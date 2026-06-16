@@ -1,7 +1,8 @@
-PROJECT                        BRANCH                      PRs  tk(ip/ready)
--------                        ------                      ---  ------------
-herdle                         main                          -  1/4
-dcs-retribution                fix/123*  ↑2 ↓1           3  0/0
-plain                          (detached)                    ?  -
+PROJECT                        BRANCH                      PRs  merge   tk(ip/ready)
+-------                        ------                      ---  -----   ------------
+herdle                         main                          -  -       1/4
+dcs-retribution                fix/123*  ↑2 ↓1           3  ✗2 ✓1   0/0
+plain                          (detached)                    ?  ?       -
+quiet                          main                          2  -       0/1
 
-(cached — herdle --fetch to refresh)  tk = in-progress/ready · run "herdle <name>" for detail
+(cached — herdle --fetch to refresh)  tk = in-progress/ready · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge

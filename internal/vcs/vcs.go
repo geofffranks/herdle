@@ -23,6 +23,24 @@ type PR struct {
 	State       string `json:"state"` // OPEN | MERGED | CLOSED
 	HeadRefName string `json:"headRefName"`
 	Title       string `json:"title"`
+
+	// Merge-readiness fields (all from the same `gh pr list --json` call).
+	Mergeable         string     `json:"mergeable"`      // MERGEABLE | CONFLICTING | UNKNOWN
+	ReviewDecision    string     `json:"reviewDecision"` // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
+	IsDraft           bool       `json:"isDraft"`
+	StatusCheckRollup []CheckRun `json:"statusCheckRollup"`
+}
+
+// CheckRun is one element of a PR's statusCheckRollup. A single flat struct
+// covers both gh element shapes: a CheckRun carries Status/Conclusion, a
+// StatusContext carries State. Absent fields unmarshal to "".
+type CheckRun struct {
+	Typename   string `json:"__typename"`
+	Status     string `json:"status"`     // CheckRun: QUEUED | IN_PROGRESS | COMPLETED
+	Conclusion string `json:"conclusion"` // CheckRun: SUCCESS | FAILURE | NEUTRAL | ...
+	State      string `json:"state"`      // StatusContext: SUCCESS | FAILURE | PENDING | ERROR | EXPECTED
+	Name       string `json:"name"`       // CheckRun label
+	Context    string `json:"context"`    // StatusContext label
 }
 
 // Ticket is a tk ticket. Lifecycle is the raw frontmatter value ("-" or "" when

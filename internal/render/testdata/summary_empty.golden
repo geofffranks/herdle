@@ -1,4 +1,4 @@
-PROJECT                        BRANCH                      PRs  tk(ip/ready)
--------                        ------                      ---  ------------
+PROJECT                        BRANCH                      PRs  merge   tk(ip/ready)
+-------                        ------                      ---  -----   ------------
 
-(cached — herdle --fetch to refresh)  tk = in-progress/ready · run "herdle <name>" for detail
+(cached — herdle --fetch to refresh)  tk = in-progress/ready · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge

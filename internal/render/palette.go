@@ -107,3 +107,16 @@ func (p palette) fflags(note dashboard.FlagNote) string {
 	}
 	return p.sevColor(note.Sev) + note.Text + p.rst
 }
+
+// fnotes joins note segments with " · ", coloring each by its own severity (the
+// open-PR cell mixes merge status and a sync warning, which can differ in color).
+func (p palette) fnotes(notes []dashboard.FlagNote) string {
+	parts := make([]string, 0, len(notes))
+	for _, n := range notes {
+		if n.Text == "" {
+			continue
+		}
+		parts = append(parts, p.sevColor(n.Sev)+n.Text+p.rst)
+	}
+	return strings.Join(parts, " · ")
+}

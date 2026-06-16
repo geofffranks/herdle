@@ -16,7 +16,9 @@ var sampleDrilldown = dashboard.Drilldown{
 	Head:    dashboard.HeadInfo{Branch: "main"},
 	HasSlug: true,
 	OpenPRs: []dashboard.PRRow{
-		{Number: 7, Head: "fix/7-x", Title: "a fix", TKs: []string{"her-aaaa"}, Note: dashboard.FlagNote{Text: "✓ in sync", Sev: dashboard.SevGreen}},
+		{Number: 7, Head: "fix/7-x", Title: "a fix", TKs: []string{"her-aaaa"}, Notes: []dashboard.FlagNote{{Text: "✓ ready to merge", Sev: dashboard.SevGreen}}},
+		{Number: 8, Head: "feat/8", Title: "a feature", TKs: nil, Notes: []dashboard.FlagNote{{Text: "✗ checks failing", Sev: dashboard.SevRed}, {Text: "⚠ ↑2 unpushed", Sev: dashboard.SevYellow}}},
+		{Number: 9, Head: "spike/9", Title: "a spike", TKs: nil, Notes: []dashboard.FlagNote{{Text: "—", Sev: dashboard.SevNone}}},
 	},
 	MergedCleanup: []dashboard.MergedRow{
 		{Number: 6, Head: "old", Title: "merged thing", Flags: dashboard.FlagNote{Text: "⚠ local branch", Sev: dashboard.SevYellow}},

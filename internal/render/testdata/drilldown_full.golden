@@ -3,7 +3,9 @@
 — git —  main
 
 — open PRs —
-  #7     fix/7-x                        a fix                                     [her-aaaa]  ✓ in sync
+  #7     fix/7-x                        a fix                                     [her-aaaa]  ✓ ready to merge
+  #8     feat/8                         a feature                                 [-]  ✗ checks failing · ⚠ ↑2 unpushed
+  #9     spike/9                        a spike                                   [-]  —
 
 — merged PRs needing cleanup —
   #6     old                            merged thing                              ⚠ local branch
@@ -20,4 +22,5 @@
   her-aaaa  specs  2026-06-13-her-aaaa-x-design.md
 
 sync: ✓ local==remote · ✗ differs (see issues) · · n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned
+PR status: ✓ ready to merge · ✗ conflicts · ✗ checks failing · ✎ changes requested · — pending/draft/computing
 lifecycle: - (not started) → designed → planned → in-development → pending-validation → validated

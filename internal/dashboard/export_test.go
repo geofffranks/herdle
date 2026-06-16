@@ -43,3 +43,7 @@ func (e Engine) ArtifactRowsForTest(path string) []ArtifactRow { return e.artifa
 func EffectiveSlugForTest(r config.Resolved, known map[string]bool) (string, bool) {
 	return effectiveSlug(r, known)
 }
+
+// ClassifyMergeForTest / MergeNoteForTest expose the merge-status helpers.
+func ClassifyMergeForTest(pr vcs.PR) MergeStatus { return classifyMerge(pr) }
+func MergeNoteForTest(s MergeStatus) FlagNote    { return mergeNote(s) }

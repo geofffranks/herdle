@@ -27,10 +27,13 @@ type HeadInfo struct {
 	Ahead, Behind int
 }
 
-// PRCell is the open-PR-count cell.
+// PRCell is the open-PR-count cell. Attention/Ready break the open PRs down by
+// merge status for the summary's merge column; both 0 when none qualify.
 type PRCell struct {
-	State PRState
-	Count int
+	State     PRState
+	Count     int
+	Attention int // Conflicts + ChecksFailing + ChangesRequested
+	Ready     int // ready to merge
 }
 
 // TKCell is the tk(in-progress/ready) cell. Present is false when there is no

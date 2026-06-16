@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/geofffranks/herdle/internal/dashboard"
 )
@@ -13,6 +14,7 @@ const (
 	colProject = 30
 	colBranch  = 26
 	colPRs     = 4
+	colMerge   = 7 // display width; fits "✗N ✓M"
 )
 
 // Summary writes wip's cross-project summary layout for rows to w. The view is
@@ -21,16 +23,16 @@ const (
 // binary was not found.
 func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched, ghAbsent bool) error {
 	out := &errWriter{w: w}
-	out.line(row("PROJECT", "BRANCH", "PRs", "tk(ip/ready)"))
-	out.line(row("-------", "------", "---", "------------"))
+	out.line(row("PROJECT", "BRANCH", "PRs", "merge", "tk(ip/ready)"))
+	out.line(row("-------", "------", "---", "-----", "------------"))
 	for _, r := range rows {
-		out.line(row(r.Name, headString(r.Head), prCell(r.PR), tkCell(r.TK)))
+		out.line(row(r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), tkCell(r.TK)))
 	}
 	note := "cached — herdle --fetch to refresh"
 	if fetched {
 		note = "fetched"
 	}
-	footer := "(" + note + `)  tk = in-progress/ready · run "herdle <name>" for detail`
+	footer := "(" + note + `)  tk = in-progress/ready · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge`
 	if ghAbsent {
 		footer += " · gh not found — PR counts hidden"
 	}
@@ -39,11 +41,14 @@ func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched, ghAbsent bool) e
 	return out.err
 }
 
-// row assembles one line in wip's exact column layout (byte-width padding).
-func row(project, branch, prs, tk string) string {
+// row assembles one line in wip's exact column layout. The merge cell is padded
+// by display width (it carries multibyte glyphs); all other columns keep byte
+// padding.
+func row(project, branch, prs, merge, tk string) string {
 	return padRight(project, colProject) + " " +
 		padRight(branch, colBranch) + " " +
-		padLeft(prs, colPRs) + "  " + tk
+		padLeft(prs, colPRs) + "  " +
+		padRightWidth(merge, colMerge) + " " + tk
 }
 
 // headString mirrors wip's git_head assembly: branch (or "(detached)"), a "*"
@@ -75,6 +80,30 @@ func prCell(p dashboard.PRCell) string {
 		return "?"
 	default:
 		return strconv.Itoa(p.Count)
+	}
+}
+
+// mergeCell renders the merge column: "✗N ✓M" (zero parts omitted), "-" when
+// nothing qualifies or no slug, "?" when gh failed. Monochrome (summary emits no
+// ANSI); the glyphs alone carry meaning.
+func mergeCell(p dashboard.PRCell) string {
+	switch p.State {
+	case dashboard.PRNoSlug:
+		return "-"
+	case dashboard.PRUnknown:
+		return "?"
+	default:
+		if p.Attention == 0 && p.Ready == 0 {
+			return "-"
+		}
+		parts := make([]string, 0, 2)
+		if p.Attention > 0 {
+			parts = append(parts, "✗"+strconv.Itoa(p.Attention))
+		}
+		if p.Ready > 0 {
+			parts = append(parts, "✓"+strconv.Itoa(p.Ready))
+		}
+		return strings.Join(parts, " ")
 	}
 }
 

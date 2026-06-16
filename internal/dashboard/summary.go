@@ -62,7 +62,16 @@ func (e Engine) prCell(slug string, isGitHub, ghAvail bool) PRCell {
 	if err != nil {
 		return PRCell{State: PRUnknown}
 	}
-	return PRCell{State: PRCounted, Count: len(prs)}
+	cell := PRCell{State: PRCounted, Count: len(prs)}
+	for _, pr := range prs {
+		switch classifyMerge(pr) {
+		case MergeReady:
+			cell.Ready++
+		case MergeConflicts, MergeChecksFailing, MergeChangesRequested:
+			cell.Attention++
+		}
+	}
+	return cell
 }
 
 // tkCell mirrors wip's `tk ls --status=in_progress | grep -c .` and

@@ -12,8 +12,9 @@ herdle is a self-contained CLI binary. Download a prebuilt release, run
 | `tk` (wedow/ticket) | required | `brew install wedow/tools/ticket` |
 | `git` | required | system / `brew install git` |
 | [superpowers](https://github.com/obra/superpowers) plugin | required (for the skills/rules to mean anything) | add its marketplace + `/plugin install` |
-| `gh` (authenticated) | optional | `brew install gh && gh auth login` — enables PR/issue features |
-| GitHub-hosted remote | optional | enables PR/issue features per-project |
+| `gh` (authenticated) | optional | `brew install gh && gh auth login` — enables GitHub PR/issue features |
+| `glab` (authenticated) | optional | `brew install glab && glab auth login` — enables GitLab MR features (gitlab.com and self-hosted; run `glab auth login --hostname <host>` per instance) |
+| GitHub- or GitLab-hosted remote | optional | enables PR/MR features per-project (forge detected from the remote host) |
 | Go toolchain | dev-only | build from source (see CONTRIBUTING) |
 
 herdle and `herdle doctor` detect each dependency and print remediation steps;
@@ -95,6 +96,8 @@ herdle 734e250-dirty
   ✓ tk             found
   ✓ gh             found
   ✓ gh auth        authenticated
+  ✓ glab           found
+  ✓ glab auth      authenticated
   ✓ superpowers    found under /Users/gfranks/.claude/plugins
   ✓ herdle on PATH on PATH as herdle
   ✗ skills + rule  3 missing: /Users/gfranks/.claude/rules/herdle.md, /Users/gfranks/.claude/skills/herdle-tk-artifacts/SKILL.md, /Users/gfranks/.claude/skills/herdle-tk-flow/SKILL.md

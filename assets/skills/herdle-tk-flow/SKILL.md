@@ -43,9 +43,10 @@ Route work-state to the right home; don't default everything to one place:
 herdle links a ticket to its branch and PR so the dashboard can show them on one
 row. Maintain these ticket frontmatter fields:
 
-- **`external-ref`** — an issue/PR reference (`gh-123`, `github#123`,
-  `.../issues/123`, `.../pull/123`). herdle token-matches the number against open
-  PR numbers and branch names.
+- **`external-ref`** — an issue/PR/MR reference (`gh-123`, `github#123`,
+  `gl-123`, `!123`, `.../issues/123`, `.../pull/123`, `.../merge_requests/123`).
+  herdle token-matches the number against open PR/MR numbers and branch names, so
+  the convention is the same whether the forge is GitHub or GitLab.
 - **`branch:`** — an exact branch name. Use this fallback when the branch carries
   no issue or PR number, so it still correlates.
 

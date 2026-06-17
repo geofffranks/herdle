@@ -2,7 +2,9 @@ package vcs
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -37,6 +39,40 @@ func binaryAvailable(envVar, defaultName string) bool {
 	}
 	_, err := exec.LookPath(defaultName)
 	return err == nil
+}
+
+// retryJSONFetch runs a forge CLI invocation (fn) up to twice — the gh/glab
+// binaries are occasionally flaky — and decodes the first successful run's stdout
+// as a JSON array of T. label is the command prefix used in error messages (e.g.
+// "gh pr list -R owner/repo"). It only trusts output that begins with "[": a
+// transient failure must never be mistaken for an empty result. On total failure
+// the last observed error is returned. Shared by GHRunner.PRList and
+// GLRunner.PRList (which decodes into its raw glMR shape, then maps to PR).
+func retryJSONFetch[T any](label string, fn func() (result, error)) ([]T, error) {
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		res, err := fn()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if res.code != 0 {
+			lastErr = fmt.Errorf("%s: %s", label, strings.TrimSpace(res.stderr))
+			continue
+		}
+		out := strings.TrimSpace(res.stdout)
+		if !strings.HasPrefix(out, "[") {
+			lastErr = fmt.Errorf("%s: unexpected output %q", label, out)
+			continue
+		}
+		var items []T
+		if err := json.Unmarshal([]byte(out), &items); err != nil {
+			lastErr = fmt.Errorf("%s: parse json: %w", label, err)
+			continue
+		}
+		return items, nil
+	}
+	return nil, lastErr
 }
 
 // run executes bin with args in working directory dir, capturing stdout, stderr,

@@ -9,46 +9,68 @@ import (
 	"github.com/geofffranks/herdle/internal/dashboard"
 )
 
-// Column widths match wip's `printf '%-30s %-26s %4s  %s'`.
+// Minimum column widths (display columns). The layout starts here — matching
+// wip's `printf '%-30s %-26s %4s  %s'` for the common case — and grows any column
+// whose content is wider, so a long branch name no longer shoves the trailing
+// columns out of alignment.
 const (
 	colProject = 30
 	colBranch  = 26
 	colPRs     = 4
-	colMerge   = 7 // display width; fits "✗N ✓M"
+	colMerge   = 7 // fits "✗N ✓M"
 )
 
-// Summary writes wip's cross-project summary layout for rows to w. The view is
+// Summary writes the cross-project summary layout for rows to w. The view is
 // monochrome (wip's summary() emits no ANSI). fetched selects the cache/fetch
-// footer note; ghAbsent appends a note that PR counts are hidden because the gh
-// binary was not found.
-func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched, ghAbsent bool) error {
+// footer note; absentForges names the forge CLIs (e.g. "gh", "glab") that a
+// routed project needed but could not be found, appended to the footer so the
+// hidden PR/MR counts are explained.
+//
+// Column widths are computed from the widest cell in each column (display width,
+// so the multibyte ↑/↓ branch arrows and ✗/✓ merge glyphs are counted as one
+// column each), clamped to the minimums above. Every row — header, separator, and
+// data — is laid out at the same widths, so the table stays aligned regardless of
+// branch-name length.
+func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched bool, absentForges []string) error {
 	out := &errWriter{w: w}
-	out.line(row("PROJECT", "BRANCH", "PRs", "merge", "tk(ip/ready)"))
-	out.line(row("-------", "------", "---", "-----", "------------"))
-	for _, r := range rows {
-		out.line(row(r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), tkCell(r.TK)))
+
+	// Render every cell up front so the widths can be measured before emitting.
+	type cells struct{ project, branch, prs, merge, tk string }
+	body := make([]cells, len(rows))
+	wp, wb, wpr, wm := colProject, colBranch, colPRs, colMerge
+	for i, r := range rows {
+		c := cells{r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), tkCell(r.TK)}
+		body[i] = c
+		wp = max(wp, dispWidth(c.project))
+		wb = max(wb, dispWidth(c.branch))
+		wpr = max(wpr, dispWidth(c.prs))
+		wm = max(wm, dispWidth(c.merge))
+	}
+
+	emit := func(project, branch, prs, merge, tk string) {
+		out.line(padRightWidth(project, wp) + " " +
+			padRightWidth(branch, wb) + " " +
+			padLeftWidth(prs, wpr) + "  " +
+			padRightWidth(merge, wm) + " " + tk)
+	}
+	dashes := func(s string) string { return strings.Repeat("-", dispWidth(s)) }
+
+	emit("PROJECT", "BRANCH", "PRs", "merge", "tk(ip/ready)")
+	emit(dashes("PROJECT"), dashes("BRANCH"), dashes("PRs"), dashes("merge"), dashes("tk(ip/ready)"))
+	for _, c := range body {
+		emit(c.project, c.branch, c.prs, c.merge, c.tk)
 	}
 	note := "cached — herdle --fetch to refresh"
 	if fetched {
 		note = "fetched"
 	}
 	footer := "(" + note + `)  tk = in-progress/ready · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge`
-	if ghAbsent {
-		footer += " · gh not found — PR counts hidden"
+	if len(absentForges) > 0 {
+		footer += " · " + strings.Join(absentForges, "/") + " not found — PR/MR counts hidden"
 	}
 	out.line("")
 	out.line(footer)
 	return out.err
-}
-
-// row assembles one line in wip's exact column layout. The merge cell is padded
-// by display width (it carries multibyte glyphs); all other columns keep byte
-// padding.
-func row(project, branch, prs, merge, tk string) string {
-	return padRight(project, colProject) + " " +
-		padRight(branch, colBranch) + " " +
-		padLeft(prs, colPRs) + "  " +
-		padRightWidth(merge, colMerge) + " " + tk
 }
 
 // headString mirrors wip's git_head assembly: branch (or "(detached)"), a "*"

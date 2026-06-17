@@ -16,14 +16,16 @@ var _ = Describe("Config.Resolve", func() {
 		git := &vcsfakes.FakeGitRunner{}
 		c := &config.Config{DefaultRemote: "origin", DefaultBase: "trunk"}
 		r, err := c.Resolve(config.Project{
-			Path: "/repo", Remote: "fork", Base: "dev", Integration: "mine", GH: "o/r",
+			Path: "/repo", Remote: "fork", Base: "dev", Integration: "mine", Slug: "o/r",
 		}, git)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r).To(Equal(config.Resolved{
 			Path: "/repo", Name: "repo", Remote: "fork", Base: "dev", Integration: "mine", Slug: "o/r",
 			SlugExplicit: true,
 		}))
-		Expect(git.RemoteURLCallCount()).To(Equal(0)) // nothing to autodetect
+		// The explicit slug value wins, but the remote host is still probed for
+		// forge routing (the fake returns no URL here, so RemoteHost stays "").
+		Expect(git.RemoteURLCallCount()).To(Equal(1))
 	})
 
 	It("falls back to global defaults when project fields are unset", func() {
@@ -93,6 +95,11 @@ var _ = Describe("slugFromURL (via Resolve)", func() {
 		"https://github.com/o/r":     "o/r",
 		"ssh://git@host/o/r.git":     "o/r",
 		"not-a-url":                  "",
+		// GitLab nested groups: any depth >= 2 segments is a valid project path.
+		"git@gitlab.rivianvw.io:vt/ps/infra/rcs/rivian_crypto_service.git": "vt/ps/infra/rcs/rivian_crypto_service",
+		"https://gitlab.com/group/subgroup/project.git":                    "group/subgroup/project",
+		"git@host:onlyone":  "", // single segment -> not a slug
+		"https://host/a//b": "", // empty segment -> rejected
 	}
 	for url, want := range cases {
 		url, want := url, want
@@ -141,26 +148,52 @@ var _ = Describe("Config.Resolve — S6 additions", func() {
 		Expect(r.SlugExplicit).To(BeFalse())
 	})
 
-	It("marks SlugExplicit when the slug comes from a gh= override", func() {
+	It("marks SlugExplicit for a slug= override AND still resolves RemoteHost", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("git@gitlab.enterprise.io:grp/proj.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin", Slug: "grp/override"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.Slug).To(Equal("grp/override")) // explicit value wins
+		Expect(r.SlugExplicit).To(BeTrue())
+		Expect(r.RemoteHost).To(Equal("gitlab.enterprise.io")) // probed, for forge routing
+	})
+
+	It("probes the remote host even for an explicit slug= (no legacy probe-skip)", func() {
 		git := &vcsfakes.FakeGitRunner{}
 		git.RemoteURLReturns("git@github.com:me/fork.git", nil)
 		git.RemoteHeadReturns("main", nil)
 		c := &config.Config{}
-		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin", GH: "canon/repo"}, git)
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "fork", Slug: "canon/repo"}, git)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(r.Slug).To(Equal("canon/repo"))
+		Expect(r.Slug).To(Equal("canon/repo")) // explicit value trusted as-is
 		Expect(r.SlugExplicit).To(BeTrue())
-		Expect(r.RemoteHost).To(Equal(""))
+		Expect(r.RemoteHost).To(Equal("github.com"))  // host resolved for routing
+		Expect(git.RemoteURLCallCount()).To(Equal(1)) // the probe ran
 	})
 
-	It("strips the port from a scheme://host:port remote URL", func() {
+	It("strips the port from RemoteHost but retains it in RemoteHostPort", func() {
 		git := &vcsfakes.FakeGitRunner{}
-		git.RemoteURLReturns("ssh://git@github.com:22/o/r.git", nil)
+		git.RemoteURLReturns("https://gitlab.internal:8929/grp/proj.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.RemoteHost).To(Equal("gitlab.internal"))          // port stripped for routing
+		Expect(r.RemoteHostPort).To(Equal("gitlab.internal:8929")) // port retained for URL rebuild
+		Expect(r.Slug).To(Equal("grp/proj"))
+	})
+
+	It("leaves RemoteHostPort equal to RemoteHost when the URL has no port", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("ssh://git@github.com/o/r.git", nil)
 		git.RemoteHeadReturns("main", nil)
 		c := &config.Config{}
 		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin"}, git)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r.RemoteHost).To(Equal("github.com"))
+		Expect(r.RemoteHostPort).To(Equal("github.com"))
 		Expect(r.Slug).To(Equal("o/r"))
 	})
 })

@@ -17,15 +17,26 @@ var _ = Describe("MigrateWipProjects", func() {
 		return p
 	}
 
-	It("parses paths and gh= overrides, skipping comments and blanks", func() {
+	It("folds legacy gh= overrides into Slug, skipping comments and blanks", func() {
 		p := writeWip("# header comment\n\n" +
 			"/work/a            gh=owner/a\n" +
 			"/work/b\n")
 		got, err := config.MigrateWipProjects(p)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got).To(Equal([]config.Project{
-			{Path: "/work/a", GH: "owner/a"},
+			{Path: "/work/a", Slug: "owner/a"},
 			{Path: "/work/b"},
+		}))
+	})
+
+	It("maps both slug= and gh= onto Slug (slug= wins when both are present)", func() {
+		p := writeWip("/work/a slug=grp/proj\n/work/b gh=owner/b\n/work/c gh=owner/c slug=grp/c\n")
+		got, err := config.MigrateWipProjects(p)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal([]config.Project{
+			{Path: "/work/a", Slug: "grp/proj"},
+			{Path: "/work/b", Slug: "owner/b"},
+			{Path: "/work/c", Slug: "grp/c"}, // slug= wins over gh=
 		}))
 	})
 

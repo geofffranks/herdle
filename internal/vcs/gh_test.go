@@ -170,6 +170,11 @@ var _ = Describe("GHRunner.KnownHosts", func() {
 		Expect(vcs.NewGHRunner().KnownHosts()).To(ConsistOf("github.com", "github.example.com"))
 	})
 
+	It("lowercases host keys for case-insensitive matching", func() {
+		writeHosts("GitHub.Example.COM:\n    user: x\n")
+		Expect(vcs.NewGHRunner().KnownHosts()).To(ConsistOf("github.com", "github.example.com"))
+	})
+
 	It("reads $XDG_CONFIG_HOME/gh/hosts.yml when GH_CONFIG_DIR is unset", func() {
 		xdg := GinkgoT().TempDir()
 		GinkgoT().Setenv("GH_CONFIG_DIR", "") // empty -> skip the GH_CONFIG_DIR branch

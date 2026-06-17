@@ -55,11 +55,28 @@ var _ = Describe("render.Drilldown", func() {
 	It("shows '(gh unavailable)' when the slug is set but gh failed and no PRs", func() {
 		d := sampleDrilldown
 		d.OpenPRs = nil
-		d.GHUnavailable = true
+		d.ForgeUnavailable = true
 		var buf bytes.Buffer
 		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
 		Expect(buf.String()).To(ContainSubstring("— open PRs —"))
 		Expect(buf.String()).To(ContainSubstring("(gh unavailable)"))
+	})
+
+	It("uses GitLab wording (glab / MR) when the forge is gitlab", func() {
+		d := sampleDrilldown
+		d.Forge = "gitlab"
+		d.OpenPRs = nil
+		d.ForgeUnavailable = true
+		d.ForgeAbsent = true
+		var buf bytes.Buffer
+		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
+		out := buf.String()
+		Expect(out).To(ContainSubstring("— open MRs —"))
+		Expect(out).To(ContainSubstring("(glab unavailable)"))
+		Expect(out).To(ContainSubstring("glab: not found — MR sections hidden"))
+		Expect(out).To(ContainSubstring("MR status:"))
+		Expect(out).NotTo(ContainSubstring("(gh unavailable)"))
+		Expect(out).NotTo(ContainSubstring("PR status:"))
 	})
 
 	It("hides empty sections (no slug, nothing to show)", func() {
@@ -73,9 +90,9 @@ var _ = Describe("render.Drilldown", func() {
 		Expect(out).To(ContainSubstring("lifecycle:"))
 	})
 
-	It("adds a gh-not-found legend line when GHAbsent", func() {
+	It("adds a gh-not-found legend line when ForgeAbsent", func() {
 		d := sampleDrilldown
-		d.GHAbsent = true
+		d.ForgeAbsent = true
 		var buf bytes.Buffer
 		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
 		Expect(buf.String()).To(ContainSubstring("gh: not found — PR sections hidden"))

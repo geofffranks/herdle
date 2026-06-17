@@ -272,12 +272,12 @@ var _ = Describe("Engine.Drilldown", func() {
 		Expect(git.PruneRemoteCallCount()).To(Equal(0))
 	})
 
-	It("marks GHUnavailable when PRList errors (and skips gh without a slug)", func() {
+	It("marks ForgeUnavailable when PRList errors (and skips gh without a slug)", func() {
 		gh.PRListReturns(nil, errors.New("gh down"))
-		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", SlugExplicit: true}, false)
+		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", SlugExplicit: true, RemoteHost: "github.com"}, false)
 		Expect(d.HasSlug).To(BeTrue())
-		Expect(d.GHUnavailable).To(BeTrue())
-		Expect(d.GHAbsent).To(BeFalse())
+		Expect(d.ForgeUnavailable).To(BeTrue())
+		Expect(d.ForgeAbsent).To(BeFalse())
 
 		gh2 := &vcsfakes.FakeGHRunner{}
 		gh2.AvailableReturns(true)
@@ -294,20 +294,20 @@ var _ = Describe("Engine.Drilldown", func() {
 		Expect(d.Head.Branch).To(Equal("main"))
 	})
 
-	It("sets GHAbsent and skips gh entirely when gh is unavailable", func() {
+	It("sets ForgeAbsent and skips gh entirely when gh is unavailable", func() {
 		gh.AvailableReturns(false)
-		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", SlugExplicit: true}, false)
-		Expect(d.GHAbsent).To(BeTrue())
-		Expect(d.GHUnavailable).To(BeFalse())
+		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", SlugExplicit: true, RemoteHost: "github.com"}, false)
+		Expect(d.ForgeAbsent).To(BeTrue())
+		Expect(d.ForgeUnavailable).To(BeFalse())
 		Expect(gh.PRListCallCount()).To(Equal(0))
 	})
 
-	It("does not flag GHAbsent for a non-GitHub repo when gh is unavailable", func() {
+	It("does not flag ForgeAbsent for a non-GitHub repo when gh is unavailable", func() {
 		gh.AvailableReturns(false)
 		gh.KnownHostsReturns([]string{"github.com"})
 		d, _ := eng.Drilldown(config.Resolved{Path: "/r", Slug: "o/r", RemoteHost: "gitlab.com"}, false)
 		Expect(d.HasSlug).To(BeFalse())
-		Expect(d.GHAbsent).To(BeFalse()) // non-GitHub repo -> no spurious "gh not found" note
+		Expect(d.ForgeAbsent).To(BeFalse()) // non-GitHub repo -> no spurious "gh not found" note
 		Expect(gh.PRListCallCount()).To(Equal(0))
 	})
 

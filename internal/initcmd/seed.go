@@ -14,7 +14,7 @@ import (
 // legacy wip projects (migrate) then the discovered Claude projects, via
 // Config.Add (dedupe by path, keep first), and writes configPath — always, even
 // with zero projects, so the gate closes and seeding never repeats. Migrate runs
-// first so a wip entry's gh= slug survives when the same path is also discovered.
+// first so a wip entry's slug survives when the same path is also discovered.
 func SeedConfig(configPath, wipPath, claudeProjectsDir string, git vcs.GitRunner) (n int, ran bool, err error) {
 	if _, statErr := os.Stat(configPath); statErr == nil {
 		return 0, false, nil // config present -> gate closed

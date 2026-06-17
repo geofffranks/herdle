@@ -2,7 +2,7 @@
 
 > **Wrangle the herd, spot the hurdles.**
 
-herdle is a self-contained Go binary that gives you a cross-project, tk-driven work-in-progress dashboard across many git/GitHub repos — open PRs, cleanup candidates, in-flight branches, and up-next tickets, all in one view. It also installs the Claude Code convention skills and a rules stub into `~/.claude/` so your AI assistant speaks the same workflow language from day one.
+herdle is a self-contained Go binary that gives you a cross-project, tk-driven work-in-progress dashboard across many git repos on GitHub and GitLab (gitlab.com and self-hosted) — open PRs/MRs, cleanup candidates, in-flight branches, and up-next tickets, all in one view. It also installs the Claude Code convention skills and a rules stub into `~/.claude/` so your AI assistant speaks the same workflow language from day one.
 
 ## What you get
 
@@ -18,6 +18,7 @@ herdle is a self-contained Go binary that gives you a cross-project, tk-driven w
 | `tk` ([wedow/ticket](https://github.com/wedow/ticket)) | Required — herdle reads ticket state and metadata |
 | superpowers plugin | Required — installed skills depend on it |
 | `gh` (authenticated) + GitHub remote | Optional — enables PR correlation, issue links, and GitHub-aware features |
+| `glab` (authenticated) + GitLab remote | Optional — enables MR correlation for gitlab.com and self-hosted GitLab (`glab auth login --hostname <host>` per instance) |
 
 See [docs/install.md](docs/install.md) for the full dependency contract and installation instructions.
 

@@ -50,9 +50,10 @@ file implies `designed`. An explicitly set value always wins.
 
 herdle links a ticket to its branch and PR via two frontmatter fields:
 
-- **`external-ref`** — an issue or PR reference such as `gh-123`, `github#123`,
-  or a URL containing `/issues/123` or `/pull/123`. herdle token-matches the
-  number against open PR numbers and branch names.
+- **`external-ref`** — an issue, PR, or MR reference such as `gh-123`,
+  `github#123`, `gl-123`, `!123`, or a URL containing `/issues/123`, `/pull/123`,
+  or `/merge_requests/123`. herdle token-matches the number against open PR/MR
+  numbers and branch names, so the convention is identical for GitHub and GitLab.
 - **`branch:`** — an explicit, exact branch name. Use this as a fallback when
   the branch carries no issue or PR number (e.g. `jtac-autolase-*`), so
   correlation still works.

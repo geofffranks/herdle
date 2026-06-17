@@ -25,13 +25,16 @@ default_base   = "main"
 
 [[project]]
 path        = "/path/to/repo"
-gh          = "owner/repo"      # optional; enables PR/issue features
+slug        = "owner/repo"      # optional; enables PR/MR features (GitHub or GitLab)
 remote      = "upstream"        # optional; autodetect if unset
 base        = "dev"             # optional; autodetect if unset
 integration = "geoff-main"      # optional; personal integration branch
 
 [[project]]
-path = "/path/to/plain"          # no gh -> git+tk view only
+path = "/path/to/gitlab/repo"    # gitlab.com or self-hosted GitLab — forge detected from the remote host
+
+[[project]]
+path = "/path/to/plain"          # no forge remote -> git+tk view only
 ```
 
 ---
@@ -50,7 +53,7 @@ path = "/path/to/plain"          # no gh -> git+tk view only
 | Key | Required | Description |
 |---|---|---|
 | `path` | yes | Absolute path to the repository. |
-| `gh` | no | `owner/repo` slug. Enables GitHub PR and issue features. |
+| `slug` | no | Forge-agnostic `[group/]owner/repo` slug. Enables PR/MR features. The forge (GitHub via `gh`, GitLab via `glab`) is selected from the remote host, so this works for github.com, GitHub Enterprise, gitlab.com, and self-hosted GitLab alike. |
 | `remote` | no | Git remote to treat as canonical. Autodetected if unset. |
 | `base` | no | Trunk branch. Autodetected if unset. |
 | `integration` | no | A personal integration branch (e.g. your long-running merge target). |
@@ -82,6 +85,25 @@ remote.
 5. `master`.
 6. Falls back to `"main"`.
 
+### `slug` and forge selection
+
+1. Explicit `slug` value (forge chosen by the remote host).
+2. Derived from the canonical remote's URL (`owner/repo`), gated by host.
+3. None — the project shows only the git + tk view.
+
+The **forge** for a project is chosen from the host of its canonical remote:
+
+- A host that `gh` is authenticated to (plus `github.com`) → **GitHub**, queried
+  with `gh pr list`.
+- A host that `glab` is authenticated to (plus `gitlab.com`) → **GitLab**,
+  queried with `glab mr list`. This covers both gitlab.com and self-hosted
+  instances such as a corporate `gitlab.example.com` — authenticate each with
+  `glab auth login --hostname <host>`.
+- Any other host → no forge; the project still shows git + tk state.
+
+GitLab merge requests are surfaced through the same PR columns and sections as
+GitHub pull requests (open MRs, merged-MR branch cleanup, merge-readiness).
+
 ---
 
 ## Environment Variables
@@ -90,6 +112,7 @@ remote.
 |---|---|
 | `HERDLE_GIT` | Override the resolved path to the `git` binary (else found on `PATH`). |
 | `HERDLE_GH` | Override the resolved path to the `gh` binary (else found on `PATH`). |
+| `HERDLE_GLAB` | Override the resolved path to the `glab` binary (else found on `PATH`). |
 | `HERDLE_TK` | Override the resolved path to the `tk` binary (else found on `PATH`). |
 | `HERDLE_CONFIG` | Override the config file location (else the default path above). |
 | `NO_COLOR` | Disable ANSI color output. A non-empty value always wins. |

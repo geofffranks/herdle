@@ -198,7 +198,7 @@ var _ = Describe("docs drift guard", func() {
 					{
 						Name: "project",
 						Subcommands: []*cli.Command{
-							{Name: "add", Flags: []cli.Flag{&cli.StringFlag{Name: "gh"}}},
+							{Name: "add", Flags: []cli.Flag{&cli.StringFlag{Name: "slug"}}},
 						},
 					},
 				},
@@ -211,20 +211,20 @@ var _ = Describe("docs drift guard", func() {
 			Expect(s.commands).To(HaveKey("project"))
 			Expect(s.commands).To(HaveKey("project add"))
 			Expect(s.flags).To(HaveKey("--all"))
-			Expect(s.flags).To(HaveKey("--gh"))
+			Expect(s.flags).To(HaveKey("--slug"))
 			Expect(s.flags).NotTo(HaveKey("--help"))
 		})
 
 		It("reports surface tokens absent from the corpus", func() {
 			s := collectDocsSurface(fakeApp())
 			Expect(missingFromCorpus(s, "nothing here")).To(ContainElement("command: project add"))
-			full := "herdle doctor; herdle project add --gh --all"
+			full := "herdle doctor; herdle project add --slug --all"
 			Expect(missingFromCorpus(s, full)).To(BeEmpty())
 		})
 
 		It("flags command-reference rows that name a nonexistent command or flag", func() {
 			s := collectDocsSurface(fakeApp())
-			rows := []string{"`herdle project add --gh`", "`herdle bogus`", "`--nope`"}
+			rows := []string{"`herdle project add --slug`", "`herdle bogus`", "`--nope`"}
 			invalid := invalidCommandRefTokens(rows, s)
 			Expect(invalid).To(ContainElement("command: bogus"))
 			Expect(invalid).To(ContainElement("flag: --nope"))

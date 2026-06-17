@@ -75,17 +75,21 @@ type ArtifactRow struct {
 
 // Drilldown is the typed per-repo view; render turns it into wip-identical bytes.
 type Drilldown struct {
-	Name, Path    string
-	Fetched       bool
-	Head          HeadInfo
-	HasSlug       bool
-	GHUnavailable bool
-	GHAbsent      bool
-	OpenPRs       []PRRow
-	MergedCleanup []MergedRow
-	WIP           []WIPRow
-	UpNext        []UpNextRow
-	Artifacts     []ArtifactRow
+	Name, Path string
+	// Forge is the resolved forge kind for this repo: "github", "gitlab", or ""
+	// (no forge). The renderer uses it to name the right CLI (gh vs glab) and noun
+	// (PR vs MR) in section headers and degradation notes.
+	Forge            string
+	Fetched          bool
+	Head             HeadInfo
+	HasSlug          bool
+	ForgeUnavailable bool
+	ForgeAbsent      bool
+	OpenPRs          []PRRow
+	MergedCleanup    []MergedRow
+	WIP              []WIPRow
+	UpNext           []UpNextRow
+	Artifacts        []ArtifactRow
 }
 
 // divFlag mirrors wip's div_flag: a local branch's divergence vs the given remote.
@@ -157,7 +161,7 @@ func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path, remote string)
 		if pr.State != "OPEN" {
 			continue
 		}
-		notes := []FlagNote{mergeNote(classifyMerge(pr))}
+		notes := []FlagNote{mergeNote(classifyMerge(pr), pr.BlockReason)}
 		if sync := e.syncNote(path, remote, pr.HeadRefName); sync.Sev != SevGreen {
 			notes = append(notes, sync)
 		}
@@ -392,17 +396,17 @@ func upNextRows(tickets []dticket) []UpNextRow {
 
 // Drilldown gathers and classifies one repo's work state, mirroring wip's
 // drilldown(). r supplies the de-personalized config (Name/Path/Slug/Base/
-// Integration/Remote/RemoteHost). GH degradation is handled transparently:
-// GHAbsent is set when gh is unavailable, GHUnavailable when gh is up but
-// PRList errors.
+// Integration/Remote/RemoteHost). Forge degradation is handled transparently:
+// ForgeAbsent is set when the forge CLI is unavailable, ForgeUnavailable when it
+// is up but PRList errors.
 func (e Engine) Drilldown(r config.Resolved, fetch bool) (Drilldown, error) {
-	ghAvail := e.GH.Available()
-	known := e.knownGitHubHosts()
-	slug, isGitHub := effectiveSlug(r, known)
-	// GHAbsent notes that PR data is hidden because gh is missing — only relevant
-	// when this project is actually a GitHub remote; a non-GitHub repo shows no PR
-	// sections regardless, so a gh-absent note would be spurious.
-	d := Drilldown{Name: r.Name, Path: r.Path, HasSlug: isGitHub, GHAbsent: !ghAvail && isGitHub}
+	rt := e.routing()
+	client, slug, kind, isForge := e.selectForge(r, rt)
+	avail := isForge && client.Available()
+	// ForgeAbsent notes that PR/MR data is hidden because the forge CLI is missing
+	// — only relevant when this project routes to a forge; a repo with no forge
+	// shows no PR sections regardless, so the note would otherwise be spurious.
+	d := Drilldown{Name: r.Name, Path: r.Path, Forge: kind, HasSlug: isForge, ForgeAbsent: isForge && !avail}
 
 	if fetch {
 		_ = e.Git.Fetch(r.Path)
@@ -414,9 +418,9 @@ func (e Engine) Drilldown(r config.Resolved, fetch bool) (Drilldown, error) {
 	d.Head = e.head(r.Path)
 
 	var prs []vcs.PR
-	if isGitHub && ghAvail {
-		if got, err := e.GH.PRList(slug, "all"); err != nil {
-			d.GHUnavailable = true
+	if avail {
+		if got, err := client.PRList(slug, "all"); err != nil {
+			d.ForgeUnavailable = true
 		} else {
 			prs = got
 		}

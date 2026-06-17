@@ -1,7 +1,7 @@
 PROJECT                        BRANCH                      PRs  merge   tk(ip/ready)
 -------                        ------                      ---  -----   ------------
 herdle                         main                          -  -       1/4
-dcs-retribution                fix/123*  ↑2 ↓1           3  ✗2 ✓1   0/0
+dcs-retribution                fix/123*  ↑2 ↓1               3  ✗2 ✓1   0/0
 plain                          (detached)                    ?  ?       -
 quiet                          main                          2  -       0/1
 

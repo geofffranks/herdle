@@ -16,7 +16,7 @@ import (
 // projectCommand builds the `herdle project` command and its subcommands.
 func projectCommand() *cli.Command {
 	flags := []cli.Flag{
-		&cli.StringFlag{Name: "gh", Usage: "owner/repo override for PR/issue features"},
+		&cli.StringFlag{Name: "slug", Usage: "forge-agnostic [group/]owner/repo override (GitHub or GitLab, by remote host)"},
 		&cli.StringFlag{Name: "remote", Usage: "git remote name (autodetect if unset)"},
 		&cli.StringFlag{Name: "base", Usage: "trunk branch (autodetect if unset)"},
 		&cli.StringFlag{Name: "integration", Usage: "personal integration branch"},
@@ -160,7 +160,7 @@ func projectAdd(c *cli.Context) error {
 	}
 	if err := cfg.Add(config.Project{
 		Path:        path,
-		GH:          flagVals["gh"],
+		Slug:        flagVals["slug"],
 		Remote:      flagVals["remote"],
 		Base:        flagVals["base"],
 		Integration: flagVals["integration"],
@@ -190,7 +190,7 @@ func projectSet(c *cli.Context) error {
 		return fmt.Errorf("project set: exactly one <name|path> argument is required")
 	}
 	if len(flagSet) == 0 {
-		return fmt.Errorf("project set: no fields to update (pass at least one of --gh/--remote/--base/--integration)")
+		return fmt.Errorf("project set: no fields to update (pass at least one of --slug/--remote/--base/--integration)")
 	}
 	key, err := normalizePath(positionals[0])
 	if err != nil {
@@ -207,8 +207,8 @@ func projectSet(c *cli.Context) error {
 		return fmt.Errorf("project set: %w", err)
 	}
 	// Only flags the user actually passed are touched; an empty value clears.
-	if flagSet["gh"] {
-		cfg.Projects[idx].GH = flagVals["gh"]
+	if flagSet["slug"] {
+		cfg.Projects[idx].Slug = flagVals["slug"]
 	}
 	if flagSet["remote"] {
 		cfg.Projects[idx].Remote = flagVals["remote"]
@@ -282,7 +282,7 @@ func projectList(c *cli.Context) error {
 			mark(p.Remote, r.Remote),
 			mark(p.Base, r.Base),
 			mark(p.Integration, r.Integration),
-			mark(p.GH, r.Slug),
+			mark(p.Slug, r.Slug),
 		)
 	}
 	if err := tw.Flush(); err != nil {

@@ -80,7 +80,7 @@ var _ = Describe("SeedConfig", func() {
 		Expect(git.RepoRootCallCount()).To(Equal(0)) // bailed before any discovery work
 	})
 
-	It("keeps the wip gh= slug when the same path is also discovered (migrate-first)", func() {
+	It("keeps the wip slug when the same path is also discovered (migrate-first)", func() {
 		tmp := GinkgoT().TempDir()
 		configPath := filepath.Join(tmp, "config.toml")
 
@@ -102,6 +102,6 @@ var _ = Describe("SeedConfig", func() {
 		got, err := config.LoadFrom(configPath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got.Projects).To(HaveLen(1))
-		Expect(got.Projects[0].GH).To(Equal("o/dup")) // wip slug survived
+		Expect(got.Projects[0].Slug).To(Equal("o/dup")) // wip slug survived (gh= folded into slug)
 	})
 })

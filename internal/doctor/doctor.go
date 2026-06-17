@@ -33,6 +33,7 @@ type Result struct {
 type Env struct {
 	Git vcs.GitRunner
 	GH  vcs.GHRunner
+	GL  vcs.GLRunner
 	TK  vcs.TKRunner
 
 	Assets       fs.FS    // embedded artifacts (assets.FS) — drives integrity
@@ -50,6 +51,8 @@ func Run(env Env) []Result {
 		checkTK,
 		checkGH,
 		checkGHAuth,
+		checkGLab,
+		checkGLabAuth,
 		checkSuperpowers,
 		checkHerdlePath,
 		checkIntegrity,

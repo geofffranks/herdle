@@ -57,6 +57,7 @@ func buildDoctorEnv() (doctor.Env, error) {
 	return doctor.Env{
 		Git:          vcs.NewGitRunner(),
 		GH:           vcs.NewGHRunner(),
+		GL:           vcs.NewGLRunner(),
 		TK:           vcs.NewTKRunner(),
 		Assets:       assets.FS,
 		ClaudeDir:    claudeDir,

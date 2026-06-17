@@ -140,14 +140,16 @@ Prints every configured project with its name, path, and metadata fields.
 ### Add a project
 
 ```
-herdle project add <path> [--gh <owner/repo>] [--remote <name>] [--base <branch>] [--integration <branch>]
+herdle project add <path> [--slug <[group/]owner/repo>] [--remote <name>] [--base <branch>] [--integration <branch>]
 ```
 
 Registers the repository at `<path>` with herdle. The path is the only required
 argument; all flags are optional and can be auto-detected:
 
-- `--gh <owner/repo>` — GitHub owner/repo slug for PR and issue features. herdle
-  auto-detects this from the git remote URL when the flag is omitted.
+- `--slug <[group/]owner/repo>` — forge-agnostic slug for PR/MR features. The forge
+  (GitHub via `gh`, GitLab via `glab`) is chosen from the remote host, so this
+  works for github.com, GitHub Enterprise, gitlab.com, and self-hosted GitLab.
+  herdle auto-detects the slug from the git remote URL when the flag is omitted.
 - `--remote <name>` — which git remote to treat as the canonical upstream (e.g.
   `origin`, `upstream`). Auto-detected from the repository when omitted.
 - `--base <branch>` — the trunk/main branch (e.g. `main`, `master`). Auto-detected
@@ -158,11 +160,11 @@ argument; all flags are optional and can be auto-detected:
 ### Update a project
 
 ```
-herdle project set <name|path> [--gh <owner/repo>] [--remote <name>] [--base <branch>] [--integration <branch>]
+herdle project set <name|path> [--slug <[group/]owner/repo>] [--remote <name>] [--base <branch>] [--integration <branch>]
 ```
 
 Updates one or more fields on an already-configured project. The identifier can
-be the project's name or its path. Accepts the same four flags as `project add`;
+be the project's name or its path. Accepts the same flags as `project add`;
 only the flags you pass are changed — omitted flags are left as-is.
 
 ### Remove a project
@@ -226,8 +228,8 @@ config (`~/.config/herdle/`) if it does not already exist. Flags:
 | `herdle <name>` | drilldown for a named project |
 | `herdle version` | print the herdle version |
 | `herdle project list` | list configured projects |
-| `herdle project add <path>` | add a project (flags: `--gh`, `--remote`, `--base`, `--integration`) |
-| `herdle project set <name>` | update a project (flags: `--gh`, `--remote`, `--base`, `--integration`) |
+| `herdle project add <path>` | add a project (flags: `--slug`, `--remote`, `--base`, `--integration`) |
+| `herdle project set <name>` | update a project (flags: `--slug`, `--remote`, `--base`, `--integration`) |
 | `herdle project rm <name>` | remove a project |
 | `herdle init` | write/refresh embedded skills + rules (`--force` overwrites after an upgrade; `--uninstall` removes them) |
 | `herdle doctor` | diagnose the herdle setup |

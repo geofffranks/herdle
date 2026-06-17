@@ -97,6 +97,7 @@ echo '[]'
 		Expect(err).NotTo(HaveOccurred())
 		args, _ := os.ReadFile(filepath.Join(dir, "glab.args"))
 		Expect(string(args)).To(ContainSubstring("--all"))
+		Expect(string(args)).NotTo(ContainSubstring("--state opened"))
 		Expect(string(args)).To(ContainSubstring("--author @me"))
 		Expect(string(args)).To(ContainSubstring("-R grp/proj"))
 
@@ -104,6 +105,7 @@ echo '[]'
 		Expect(err).NotTo(HaveOccurred())
 		args, _ = os.ReadFile(filepath.Join(dir, "glab.args"))
 		Expect(string(args)).NotTo(ContainSubstring("--all"))
+		Expect(string(args)).To(ContainSubstring("--state opened")) // open path pins state explicitly
 	})
 
 	It("retries once then succeeds", func() {
@@ -178,5 +180,15 @@ var _ = Describe("GLRunner.KnownHosts", func() {
 	It("ignores a host's own indented settings and trailing top-level keys", func() {
 		writeConfig("hosts:\n    gitlab.example.com:\n        api_host: gitlab.example.com\n        token: secret\nlast_seen_version: v1\n")
 		Expect(vcs.NewGLRunner().KnownHosts()).To(ConsistOf("gitlab.com", "gitlab.example.com"))
+	})
+
+	It("reads tab-indented host entries (YAML forbids tabs, but real configs have them)", func() {
+		writeConfig("hosts:\n\tgitlab.corp.io:\n\t\tuser: a\n")
+		Expect(vcs.NewGLRunner().KnownHosts()).To(ConsistOf("gitlab.com", "gitlab.corp.io"))
+	})
+
+	It("lowercases host keys for case-insensitive matching", func() {
+		writeConfig("hosts:\n    GitLab.Corp.IO:\n        user: a\n")
+		Expect(vcs.NewGLRunner().KnownHosts()).To(ConsistOf("gitlab.com", "gitlab.corp.io"))
 	})
 })

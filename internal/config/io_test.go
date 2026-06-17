@@ -49,6 +49,38 @@ var _ = Describe("config IO", func() {
 		Expect(got.Projects).To(Equal(c.Projects))
 	})
 
+	It("folds a legacy gh= slug into Slug on load and re-saves as slug=", func() {
+		path := tmpConfig()
+		Expect(os.MkdirAll(filepath.Dir(path), 0o750)).To(Succeed())
+		// A config written by the old --gh flow: a bare `gh =` with no `slug =`.
+		Expect(os.WriteFile(path, []byte("[[project]]\npath = \"/work/a\"\ngh = \"o/a\"\n"), 0o600)).To(Succeed())
+
+		got, err := config.Load()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.Projects).To(HaveLen(1))
+		Expect(got.Projects[0].Slug).To(Equal("o/a")) // gh= folded into Slug
+		Expect(got.Projects[0].GH).To(BeEmpty())      // cleared so it won't round-trip
+
+		// Re-saving emits slug=, not the legacy gh=.
+		Expect(got.Save()).To(Succeed())
+		raw, err := os.ReadFile(path) // #nosec G304 -- test reads the file it just wrote
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(raw)).To(ContainSubstring(`slug = "o/a"`))
+		Expect(string(raw)).NotTo(ContainSubstring("gh ="))
+	})
+
+	It("prefers an explicit slug= over a legacy gh= on the same project", func() {
+		path := tmpConfig()
+		Expect(os.MkdirAll(filepath.Dir(path), 0o750)).To(Succeed())
+		Expect(os.WriteFile(path,
+			[]byte("[[project]]\npath = \"/work/a\"\nslug = \"new/slug\"\ngh = \"old/slug\"\n"), 0o600)).To(Succeed())
+
+		got, err := config.Load()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.Projects[0].Slug).To(Equal("new/slug")) // modern slug= wins
+		Expect(got.Projects[0].GH).To(BeEmpty())
+	})
+
 	It("creates the parent directory on save", func() {
 		path := tmpConfig() // parent dir does not exist yet
 		c := &config.Config{Projects: []config.Project{{Path: "/x"}}}

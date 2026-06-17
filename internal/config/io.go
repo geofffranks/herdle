@@ -61,6 +61,11 @@ func LoadFrom(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Migrate any legacy `gh =` slug into the forge-agnostic Slug so an upgraded
+	// config does not silently lose PR correlation.
+	for i := range c.Projects {
+		c.Projects[i].foldLegacyGH()
+	}
 	return &c, nil
 }
 

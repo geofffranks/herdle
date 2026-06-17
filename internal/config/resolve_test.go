@@ -173,14 +173,27 @@ var _ = Describe("Config.Resolve — S6 additions", func() {
 		Expect(git.RemoteURLCallCount()).To(Equal(1)) // the probe ran
 	})
 
-	It("strips the port from a scheme://host:port remote URL", func() {
+	It("strips the port from RemoteHost but retains it in RemoteHostPort", func() {
 		git := &vcsfakes.FakeGitRunner{}
-		git.RemoteURLReturns("ssh://git@github.com:22/o/r.git", nil)
+		git.RemoteURLReturns("https://gitlab.internal:8929/grp/proj.git", nil)
+		git.RemoteHeadReturns("main", nil)
+		c := &config.Config{}
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin"}, git)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.RemoteHost).To(Equal("gitlab.internal"))          // port stripped for routing
+		Expect(r.RemoteHostPort).To(Equal("gitlab.internal:8929")) // port retained for URL rebuild
+		Expect(r.Slug).To(Equal("grp/proj"))
+	})
+
+	It("leaves RemoteHostPort equal to RemoteHost when the URL has no port", func() {
+		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("ssh://git@github.com/o/r.git", nil)
 		git.RemoteHeadReturns("main", nil)
 		c := &config.Config{}
 		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin"}, git)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r.RemoteHost).To(Equal("github.com"))
+		Expect(r.RemoteHostPort).To(Equal("github.com"))
 		Expect(r.Slug).To(Equal("o/r"))
 	})
 })

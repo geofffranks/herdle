@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type ghRunner struct{}
@@ -48,9 +47,8 @@ func (r ghRunner) Authenticated() bool {
 }
 
 // KnownHosts returns the GitHub hosts gh is authenticated to (the top-level keys
-// in gh's hosts.yml) unioned with github.com. Dependency-free: a top-level YAML
-// key is a line with no leading whitespace whose colon is followed by nothing
-// (host keys carry no inline value; child keys are indented).
+// in gh's hosts.yml) unioned with github.com. Host parsing is shared with glab via
+// yamlBareKeys; gh's hosts are top-level keys, so the parent is "".
 func (ghRunner) KnownHosts() []string {
 	hosts := []string{"github.com"}
 	seen := map[string]bool{"github.com": true}
@@ -58,15 +56,7 @@ func (ghRunner) KnownHosts() []string {
 	if err != nil {
 		return hosts
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '#' {
-			continue
-		}
-		i := strings.IndexByte(line, ':')
-		if i <= 0 || strings.TrimSpace(line[i+1:]) != "" {
-			continue
-		}
-		h := strings.TrimSpace(line[:i])
+	for _, h := range yamlBareKeys(string(data), "") {
 		if h != "" && !seen[h] {
 			seen[h] = true
 			hosts = append(hosts, h)

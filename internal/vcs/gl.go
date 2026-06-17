@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type glRunner struct{}
@@ -94,6 +93,12 @@ func (r glRunner) PRList(slug, state string) ([]PR, error) {
 	args := []string{"mr", "list", "-R", slug, "--author", "@me", "-F", "json", "--per-page", "60"}
 	if state == "all" {
 		args = append(args, "--all")
+	} else {
+		// Pin the open-state filter explicitly rather than leaning on glab's default
+		// (currently "opened"): a glab default change, or a future caller passing a
+		// non-"all" state, would otherwise silently return wrong-state MRs. Mirrors
+		// gh.go, which always passes --state.
+		args = append(args, "--state", "opened")
 	}
 	// glab is occasionally flaky; retryJSONFetch retries once and only trusts a
 	// real JSON array, so a transient failure never looks like "no MRs". glab emits
@@ -135,51 +140,13 @@ func (glRunner) KnownHosts() []string {
 	if err != nil {
 		return hosts
 	}
-	for _, h := range parseGlabHosts(string(data)) {
+	// glab nests hosts under a top-level `hosts:` map; yamlBareKeys (shared with gh)
+	// collects the bare host keys at that level.
+	for _, h := range yamlBareKeys(string(data), "hosts") {
 		if h != "" && !seen[h] {
 			seen[h] = true
 			hosts = append(hosts, h)
 		}
-	}
-	return hosts
-}
-
-// parseGlabHosts extracts the host keys nested under the top-level `hosts:` map of
-// glab's YAML config. Dependency-free: it finds the unindented `hosts:` line, then
-// collects keys at the first child-indent level whose colon carries no inline
-// value (a host map key; deeper keys are that host's own settings). Hosts are
-// lowercased for case-insensitive matching against a remote URL host.
-func parseGlabHosts(cfg string) []string {
-	var hosts []string
-	inHosts := false
-	childIndent := -1
-	for _, raw := range strings.Split(cfg, "\n") {
-		line := strings.TrimRight(raw, "\r")
-		trimmed := strings.TrimLeft(line, " ")
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		indent := len(line) - len(trimmed)
-		if !inHosts {
-			if indent == 0 && trimmed == "hosts:" {
-				inHosts = true
-			}
-			continue
-		}
-		if indent == 0 {
-			break // a new top-level key ends the hosts block
-		}
-		if childIndent == -1 {
-			childIndent = indent
-		}
-		if indent != childIndent {
-			continue // deeper (a host's own settings) — skip
-		}
-		i := strings.IndexByte(trimmed, ':')
-		if i <= 0 || strings.TrimSpace(trimmed[i+1:]) != "" {
-			continue // not a bare "host:" key
-		}
-		hosts = append(hosts, strings.ToLower(strings.TrimSpace(trimmed[:i])))
 	}
 	return hosts
 }

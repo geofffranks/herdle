@@ -104,6 +104,18 @@ var _ = Describe("selectForge (host->forge routing)", func() {
 			Expect(slug).To(Equal("https://gitlab.example.com/grp/proj"))
 		})
 
+		It("carries a non-default port into the self-hosted GitLab URL", func() {
+			// Routing matches the port-free RemoteHost against KnownHosts; the rebuilt
+			// glab -R URL must keep the port (RemoteHostPort) or glab hits 443.
+			slug, kind, ok := eng.SelectForgeForTest(config.Resolved{
+				Slug: "grp/proj", RemoteHost: "gitlab.example.com",
+				RemoteHostPort: "gitlab.example.com:8929",
+			})
+			Expect(ok).To(BeTrue())
+			Expect(kind).To(Equal("gitlab"))
+			Expect(slug).To(Equal("https://gitlab.example.com:8929/grp/proj"))
+		})
+
 		It("rejects a host belonging to no configured forge", func() {
 			slug, _, ok := eng.SelectForgeForTest(
 				config.Resolved{Slug: "o/r", RemoteHost: "bitbucket.org"})

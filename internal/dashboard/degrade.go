@@ -17,7 +17,7 @@ type forgeClient interface {
 
 // hostSet lowercases and indexes a forge's known hosts, always including the
 // forge's canonical public host. Lowercasing keeps matching against a remote
-// URL's host case-insensitive (hostFromURL also lowercases).
+// URL's host case-insensitive (authorityFromURL also lowercases).
 func hostSet(canonical string, hosts []string) map[string]bool {
 	set := map[string]bool{canonical: true}
 	for _, h := range hosts {
@@ -139,7 +139,14 @@ func (e Engine) selectForge(r config.Resolved, rt forgeRouting) (forgeClient, st
 		}
 	case "gitlab":
 		if r.RemoteHost != "gitlab.com" {
-			slug = "https://" + r.RemoteHost + "/" + slug
+			// Use the port-qualified authority: a self-hosted GitLab on a non-default
+			// port (e.g. gitlab.internal:8929) must keep its port or glab's -R URL hits
+			// 443/80. RemoteHostPort == RemoteHost when the URL had no port.
+			host := r.RemoteHostPort
+			if host == "" {
+				host = r.RemoteHost
+			}
+			slug = "https://" + host + "/" + slug
 		}
 	}
 	return e.clientFor(kind), slug, kind, true

@@ -73,7 +73,8 @@ func (c *Config) Resolve(p Project, git vcs.GitRunner) (Resolved, error) {
 			url, _ = git.RemoteURL(p.Path, r.Remote)
 		}
 		if url != "" {
-			r.RemoteHost = hostFromURL(url)
+			r.RemoteHostPort = authorityFromURL(url)
+			r.RemoteHost = stripPort(r.RemoteHostPort)
 			if r.Slug == "" {
 				r.Slug = slugFromURL(url)
 			}
@@ -83,14 +84,18 @@ func (c *Config) Resolve(p Project, git vcs.GitRunner) (Resolved, error) {
 	return r, nil
 }
 
-// hostFromURL extracts the host from a git remote URL, mirroring slugFromURL's
-// scheme handling: "git@host:owner/repo(.git)" and
-// "scheme://[user@]host[:port]/owner/repo(.git)" -> "host" (port stripped);
-// anything else -> "".
-func hostFromURL(url string) string {
+// authorityFromURL extracts the host authority (host with any port retained) from
+// a git remote URL, mirroring slugFromURL's scheme handling:
+// "git@host:owner/repo(.git)" -> "host" (scp-like syntax carries no port);
+// "scheme://[user@]host[:port]/owner/repo(.git)" -> "host[:port]"; anything else
+// -> "". The result is lowercased. Callers that route by host strip the port via
+// stripPort; callers that rebuild a forge URL (self-hosted GitLab) keep it.
+func authorityFromURL(url string) string {
 	s := strings.TrimSpace(url)
 	switch {
 	case strings.HasPrefix(s, "git@"):
+		// scp-like "git@host:path": the colon separates host from path, not a port,
+		// so there is no port to retain here.
 		s = strings.TrimPrefix(s, "git@")
 		if i := strings.IndexByte(s, ':'); i > 0 {
 			return strings.ToLower(s[:i])
@@ -101,11 +106,11 @@ func hostFromURL(url string) string {
 		if at := strings.IndexByte(s, '@'); at >= 0 {
 			s = s[at+1:]
 		}
-		host := s
+		authority := s
 		if i := strings.IndexByte(s, '/'); i >= 0 {
-			host = s[:i]
+			authority = s[:i]
 		}
-		return strings.ToLower(stripPort(host))
+		return strings.ToLower(authority)
 	}
 	return ""
 }

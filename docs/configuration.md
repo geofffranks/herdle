@@ -54,7 +54,6 @@ path = "/path/to/plain"          # no forge remote -> git+tk view only
 |---|---|---|
 | `path` | yes | Absolute path to the repository. |
 | `slug` | no | Forge-agnostic `[group/]owner/repo` slug. Enables PR/MR features. The forge (GitHub via `gh`, GitLab via `glab`) is selected from the remote host, so this works for github.com, GitHub Enterprise, gitlab.com, and self-hosted GitLab alike. |
-| `gh` | no | Legacy GitHub-only `owner/repo` override. Still works and always means GitHub; prefer `slug` for new config. |
 | `remote` | no | Git remote to treat as canonical. Autodetected if unset. |
 | `base` | no | Trunk branch. Autodetected if unset. |
 | `integration` | no | A personal integration branch (e.g. your long-running merge target). |
@@ -88,10 +87,9 @@ remote.
 
 ### `slug` and forge selection
 
-1. Explicit `gh` value (always GitHub).
-2. Explicit `slug` value (forge chosen by the remote host).
-3. Derived from the canonical remote's URL (`owner/repo`), gated by host.
-4. None — the project shows only the git + tk view.
+1. Explicit `slug` value (forge chosen by the remote host).
+2. Derived from the canonical remote's URL (`owner/repo`), gated by host.
+3. None — the project shows only the git + tk view.
 
 The **forge** for a project is chosen from the host of its canonical remote:
 

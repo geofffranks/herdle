@@ -20,8 +20,10 @@ func WipProjectsPath() (string, error) {
 }
 
 // MigrateWipProjects parses the legacy wip projects file into sparse Projects.
-// Each non-comment line is "path [gh=owner/repo] [slug=group/project]". A missing
-// file yields an empty slice and no error. The caller merges via Config.Add.
+// Each non-comment line is "path [gh=owner/repo] [slug=group/project]". Both keys
+// map onto the single forge-agnostic Slug (herdle no longer has a GitHub-only
+// gh=); if a line carries both, slug= wins. A missing file yields an empty slice
+// and no error. The caller merges via Config.Add.
 func MigrateWipProjects(wipPath string) ([]Project, error) {
 	f, err := os.Open(wipPath) // #nosec G304 -- path is the legacy wip config location
 	if err != nil {
@@ -41,13 +43,20 @@ func MigrateWipProjects(wipPath string) ([]Project, error) {
 		}
 		fields := strings.Fields(line)
 		p := Project{Path: fields[0]}
+		var gh, slug string
 		for _, fld := range fields[1:] {
 			switch {
 			case strings.HasPrefix(fld, "gh="):
-				p.GH = strings.TrimPrefix(fld, "gh=")
+				gh = strings.TrimPrefix(fld, "gh=")
 			case strings.HasPrefix(fld, "slug="):
-				p.Slug = strings.TrimPrefix(fld, "slug=")
+				slug = strings.TrimPrefix(fld, "slug=")
 			}
+		}
+		// Both legacy keys fold into Slug; an explicit slug= wins over a gh=.
+		if slug != "" {
+			p.Slug = slug
+		} else {
+			p.Slug = gh
 		}
 		out = append(out, p)
 	}

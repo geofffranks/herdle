@@ -31,7 +31,7 @@ var _ = Describe("config IO", func() {
 		c := &config.Config{
 			DefaultRemote: "upstream",
 			Projects: []config.Project{
-				{Path: "/work/a", GH: "o/a"},
+				{Path: "/work/a", Slug: "o/a"},
 				{Path: "/work/b", Base: "dev"},
 			},
 		}

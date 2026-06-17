@@ -47,12 +47,18 @@ echo '[
   {"iid":5,"state":"opened","source_branch":"e","work_in_progress":true},
   {"iid":6,"state":"opened","source_branch":"f","has_conflicts":true},
   {"iid":7,"state":"opened","source_branch":"g","detailed_merge_status":"conflict"},
-  {"iid":8,"state":"opened","source_branch":"h","detailed_merge_status":"requested_changes"}
+  {"iid":8,"state":"opened","source_branch":"h","detailed_merge_status":"requested_changes"},
+  {"iid":9,"state":"opened","source_branch":"i","detailed_merge_status":"broken_status"},
+  {"iid":10,"state":"opened","source_branch":"j","detailed_merge_status":"not_approved"},
+  {"iid":11,"state":"opened","source_branch":"k","detailed_merge_status":"need_rebase"},
+  {"iid":12,"state":"opened","source_branch":"l","detailed_merge_status":"discussions_not_resolved"},
+  {"iid":13,"state":"opened","source_branch":"m","detailed_merge_status":"ci_must_pass"},
+  {"iid":14,"state":"opened","source_branch":"n","detailed_merge_status":"ci_still_running"}
 ]'
 `)
 		prs, err := gl.PRList("grp/proj", "all")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(prs).To(HaveLen(8))
+		Expect(prs).To(HaveLen(14))
 		Expect(prs[0].State).To(Equal("MERGED"))
 		Expect(prs[1].State).To(Equal("CLOSED"))
 		Expect(prs[2].State).To(Equal("CLOSED"))
@@ -61,6 +67,18 @@ echo '[
 		Expect(prs[5].Mergeable).To(Equal("CONFLICTING"))
 		Expect(prs[6].Mergeable).To(Equal("CONFLICTING"))
 		Expect(prs[7].ReviewDecision).To(Equal("CHANGES_REQUESTED"))
+		// broken_status means GitLab couldn't compute mergeability (transient), not
+		// a real conflict -> must NOT be marked CONFLICTING (neutral instead).
+		Expect(prs[8].Mergeable).To(BeEmpty())
+		Expect(prs[8].BlockReason).To(BeEmpty())
+		// Named non-hard blockers -> BlockReason (no conflict/changes-requested).
+		Expect(prs[9].BlockReason).To(Equal("needs approval"))
+		Expect(prs[10].BlockReason).To(Equal("needs rebase"))
+		Expect(prs[11].BlockReason).To(Equal("unresolved threads"))
+		Expect(prs[12].BlockReason).To(Equal("checks not passed"))
+		// ci_still_running is a transient "computing" state -> stays neutral.
+		Expect(prs[13].BlockReason).To(BeEmpty())
+		Expect(prs[13].Mergeable).To(BeEmpty())
 	})
 
 	It("treats an empty JSON array as zero MRs (no error)", func() {

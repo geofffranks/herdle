@@ -16,14 +16,16 @@ var _ = Describe("Config.Resolve", func() {
 		git := &vcsfakes.FakeGitRunner{}
 		c := &config.Config{DefaultRemote: "origin", DefaultBase: "trunk"}
 		r, err := c.Resolve(config.Project{
-			Path: "/repo", Remote: "fork", Base: "dev", Integration: "mine", GH: "o/r",
+			Path: "/repo", Remote: "fork", Base: "dev", Integration: "mine", Slug: "o/r",
 		}, git)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r).To(Equal(config.Resolved{
 			Path: "/repo", Name: "repo", Remote: "fork", Base: "dev", Integration: "mine", Slug: "o/r",
 			SlugExplicit: true,
 		}))
-		Expect(git.RemoteURLCallCount()).To(Equal(0)) // nothing to autodetect
+		// The explicit slug value wins, but the remote host is still probed for
+		// forge routing (the fake returns no URL here, so RemoteHost stays "").
+		Expect(git.RemoteURLCallCount()).To(Equal(1))
 	})
 
 	It("falls back to global defaults when project fields are unset", func() {
@@ -146,19 +148,7 @@ var _ = Describe("Config.Resolve — S6 additions", func() {
 		Expect(r.SlugExplicit).To(BeFalse())
 	})
 
-	It("marks SlugExplicit when the slug comes from a gh= override", func() {
-		git := &vcsfakes.FakeGitRunner{}
-		git.RemoteURLReturns("git@github.com:me/fork.git", nil)
-		git.RemoteHeadReturns("main", nil)
-		c := &config.Config{}
-		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "origin", GH: "canon/repo"}, git)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(r.Slug).To(Equal("canon/repo"))
-		Expect(r.SlugExplicit).To(BeTrue())
-		Expect(r.RemoteHost).To(Equal(""))
-	})
-
-	It("marks SlugExplicit for a neutral slug= override AND still resolves RemoteHost", func() {
+	It("marks SlugExplicit for a slug= override AND still resolves RemoteHost", func() {
 		git := &vcsfakes.FakeGitRunner{}
 		git.RemoteURLReturns("git@gitlab.enterprise.io:grp/proj.git", nil)
 		git.RemoteHeadReturns("main", nil)
@@ -167,20 +157,20 @@ var _ = Describe("Config.Resolve — S6 additions", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r.Slug).To(Equal("grp/override")) // explicit value wins
 		Expect(r.SlugExplicit).To(BeTrue())
-		Expect(r.RemoteHost).To(Equal("gitlab.enterprise.io")) // still probed, for forge routing
+		Expect(r.RemoteHost).To(Equal("gitlab.enterprise.io")) // probed, for forge routing
 	})
 
-	It("prefers gh= over slug= and skips the host probe for the legacy override", func() {
+	It("probes the remote host even for an explicit slug= (no legacy probe-skip)", func() {
 		git := &vcsfakes.FakeGitRunner{}
+		git.RemoteURLReturns("git@github.com:me/fork.git", nil)
+		git.RemoteHeadReturns("main", nil)
 		c := &config.Config{}
-		r, err := c.Resolve(config.Project{
-			Path: "/repo", Remote: "fork", GH: "o/r", Slug: "grp/proj",
-		}, git)
+		r, err := c.Resolve(config.Project{Path: "/repo", Remote: "fork", Slug: "canon/repo"}, git)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(r.Slug).To(Equal("o/r"))
+		Expect(r.Slug).To(Equal("canon/repo")) // explicit value trusted as-is
 		Expect(r.SlugExplicit).To(BeTrue())
-		Expect(r.RemoteHost).To(Equal("")) // gh= is GitHub by definition: no host probe
-		Expect(git.RemoteURLCallCount()).To(Equal(0))
+		Expect(r.RemoteHost).To(Equal("github.com"))  // host resolved for routing
+		Expect(git.RemoteURLCallCount()).To(Equal(1)) // the probe ran
 	})
 
 	It("strips the port from a scheme://host:port remote URL", func() {

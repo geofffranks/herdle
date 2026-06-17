@@ -86,7 +86,8 @@ var _ = Describe("Engine.Summary", func() {
 
 		It("is Counted with len(prs) and queries the open state", func() {
 			gh.PRListReturns([]vcs.PR{{Number: 1}, {Number: 2}}, nil)
-			cfg := &config.Config{Projects: []config.Project{{Path: "/r", GH: "o/r"}}}
+			git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
+			cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
 			res, _ := eng.Summary(cfg, false)
 			Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 2}))
 			slug, state := gh.PRListArgsForCall(0)
@@ -96,7 +97,8 @@ var _ = Describe("Engine.Summary", func() {
 
 		It("is Unknown when gh fails", func() {
 			gh.PRListReturns(nil, errors.New("gh down"))
-			cfg := &config.Config{Projects: []config.Project{{Path: "/r", GH: "o/r"}}}
+			git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
+			cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
 			res, _ := eng.Summary(cfg, false)
 			Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRUnknown))
 		})
@@ -108,7 +110,8 @@ var _ = Describe("Engine.Summary", func() {
 				{Number: 3, State: "OPEN", Mergeable: "MERGEABLE", ReviewDecision: "CHANGES_REQUESTED"}, // attention
 				{Number: 4, State: "OPEN", IsDraft: true},                                               // neutral
 			}, nil)
-			cfg := &config.Config{Projects: []config.Project{{Path: "/r", GH: "o/r"}}}
+			git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
+			cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
 			res, _ := eng.Summary(cfg, false)
 			Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 4, Attention: 2, Ready: 1}))
 		})
@@ -189,9 +192,10 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 		tk.HasTicketsReturns(false, nil)
 	})
 
-	It("when gh is absent: no PR call, PR cell '-' (NoSlug), GHAbsent set", func() {
+	It("when gh is absent: no PR call, PR cell '-' (NoSlug), forge listed absent", func() {
 		gh.AvailableReturns(false)
-		cfg := &config.Config{Projects: []config.Project{{Path: "/r", GH: "o/r"}}}
+		git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
+		cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
 		res, _ := eng.Summary(cfg, false)
 		Expect(res.AbsentForges).To(ContainElement("gh"))
 		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRNoSlug))
@@ -210,7 +214,7 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 		Expect(gh.PRListCallCount()).To(Equal(0))
 	})
 
-	It("does not flag GHAbsent when gh is absent but no project is a GitHub remote", func() {
+	It("does not flag the forge absent when gh is absent but no project is a GitHub remote", func() {
 		gh.AvailableReturns(false)
 		gh.KnownHostsReturns([]string{"github.com"})
 		git.RemoteURLReturns("git@gitlab.com:o/r.git", nil)

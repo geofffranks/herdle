@@ -41,10 +41,10 @@ func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched bool, absentForge
 	for i, r := range rows {
 		c := cells{r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), tkCell(r.TK)}
 		body[i] = c
-		wp = maxInt(wp, dispWidth(c.project))
-		wb = maxInt(wb, dispWidth(c.branch))
-		wpr = maxInt(wpr, dispWidth(c.prs))
-		wm = maxInt(wm, dispWidth(c.merge))
+		wp = max(wp, dispWidth(c.project))
+		wb = max(wb, dispWidth(c.branch))
+		wpr = max(wpr, dispWidth(c.prs))
+		wm = max(wm, dispWidth(c.merge))
 	}
 
 	emit := func(project, branch, prs, merge, tk string) {

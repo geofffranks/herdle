@@ -35,6 +35,11 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 		}
 	}
 
+	// Forge availability is a process-wide property (the CLI is on PATH or not), so
+	// probe each wired forge once here rather than re-running Available() — an
+	// exec.LookPath / stat — inside every project goroutine.
+	forgeAvail := e.forgeAvailability()
+
 	rows := make([]SummaryRow, len(projects))
 	var (
 		mu     sync.Mutex
@@ -54,7 +59,7 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 			}
 			r, _ := cfg.Resolve(p, e.Git) // error reserved for future hard failures
 			client, slug, kind, isForge := e.selectForge(r, rt)
-			avail := isForge && client.Available()
+			avail := isForge && forgeAvail[kind]
 			if isForge && !avail {
 				mu.Lock()
 				absent[forgeCLI(kind)] = true
@@ -113,7 +118,7 @@ func (e Engine) prCell(client forgeClient, slug string, query bool) PRCell {
 		switch classifyMerge(pr) {
 		case MergeReady:
 			cell.Ready++
-		case MergeConflicts, MergeChecksFailing, MergeChangesRequested:
+		case MergeConflicts, MergeChecksFailing, MergeChangesRequested, MergeBlocked:
 			cell.Attention++
 		}
 	}

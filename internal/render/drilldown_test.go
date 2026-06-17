@@ -55,7 +55,7 @@ var _ = Describe("render.Drilldown", func() {
 	It("shows '(gh unavailable)' when the slug is set but gh failed and no PRs", func() {
 		d := sampleDrilldown
 		d.OpenPRs = nil
-		d.GHUnavailable = true
+		d.ForgeUnavailable = true
 		var buf bytes.Buffer
 		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
 		Expect(buf.String()).To(ContainSubstring("— open PRs —"))
@@ -66,8 +66,8 @@ var _ = Describe("render.Drilldown", func() {
 		d := sampleDrilldown
 		d.Forge = "gitlab"
 		d.OpenPRs = nil
-		d.GHUnavailable = true
-		d.GHAbsent = true
+		d.ForgeUnavailable = true
+		d.ForgeAbsent = true
 		var buf bytes.Buffer
 		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
 		out := buf.String()
@@ -90,9 +90,9 @@ var _ = Describe("render.Drilldown", func() {
 		Expect(out).To(ContainSubstring("lifecycle:"))
 	})
 
-	It("adds a gh-not-found legend line when GHAbsent", func() {
+	It("adds a gh-not-found legend line when ForgeAbsent", func() {
 		d := sampleDrilldown
-		d.GHAbsent = true
+		d.ForgeAbsent = true
 		var buf bytes.Buffer
 		Expect(render.Drilldown(&buf, d, false)).To(Succeed())
 		Expect(buf.String()).To(ContainSubstring("gh: not found — PR sections hidden"))

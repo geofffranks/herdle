@@ -48,5 +48,5 @@ func (e Engine) SelectForgeForTest(r config.Resolved) (slug, kind string, ok boo
 }
 
 // ClassifyMergeForTest / MergeNoteForTest expose the merge-status helpers.
-func ClassifyMergeForTest(pr vcs.PR) MergeStatus { return classifyMerge(pr) }
-func MergeNoteForTest(s MergeStatus) FlagNote    { return mergeNote(s) }
+func ClassifyMergeForTest(pr vcs.PR) MergeStatus             { return classifyMerge(pr) }
+func MergeNoteForTest(s MergeStatus, reason string) FlagNote { return mergeNote(s, reason) }

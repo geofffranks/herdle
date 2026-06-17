@@ -30,6 +30,14 @@ type PR struct {
 	ReviewDecision    string     `json:"reviewDecision"` // APPROVED | CHANGES_REQUESTED | REVIEW_REQUIRED | ""
 	IsDraft           bool       `json:"isDraft"`
 	StatusCheckRollup []CheckRun `json:"statusCheckRollup"`
+
+	// BlockReason is a short, human-readable reason an open PR/MR is not ready to
+	// merge despite having no conflicts, no failing checks, and no requested
+	// changes — e.g. "needs approval" or "needs rebase". It is forge-neutral but
+	// only GitLab populates it today: GitHub's `mergeable` field is blind to branch
+	// protection, so gh reports such PRs as mergeable, whereas GitLab's
+	// detailed_merge_status names the specific blocker. Empty for an unblocked PR.
+	BlockReason string `json:"-"`
 }
 
 // CheckRun is one element of a PR's statusCheckRollup. A single flat struct

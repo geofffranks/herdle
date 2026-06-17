@@ -22,5 +22,5 @@
   her-aaaa  specs  2026-06-13-her-aaaa-x-design.md
 
 sync: ✓ local==remote · ✗ differs (see issues) · · n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned
-PR status: ✓ ready to merge · ✗ conflicts · ✗ checks failing · ✎ changes requested · — pending/draft/computing
+PR status: ✓ ready to merge · ✗ conflicts · ✗ checks failing · ✎ changes requested · ⚠ blocked · — pending/draft/computing
 lifecycle: - (not started) → designed → planned → in-development → pending-validation → validated

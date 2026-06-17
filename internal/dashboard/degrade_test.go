@@ -22,22 +22,24 @@ var _ = Describe("selectForge (host->forge routing)", func() {
 	})
 
 	Describe("explicit overrides", func() {
-		It("routes a host-less explicit slug (legacy gh=) to GitHub, trusted as-is", func() {
-			slug, kind, ok := eng.SelectForgeForTest(
-				config.Resolved{Slug: "canon/repo", SlugExplicit: true})
-			Expect(ok).To(BeTrue())
-			Expect(kind).To(Equal("github"))
-			Expect(slug).To(Equal("canon/repo"))
+		It("degrades a host-less slug= (no usable remote) instead of guessing GitHub", func() {
+			// slug= is routed by remote host; with no host resolved (missing/unreadable
+			// remote) the forge is unknown, so it must degrade to "-" rather than be
+			// guessed as GitHub — that would call gh for a possibly-GitLab repo and
+			// show a phantom "?".
+			_, _, ok := eng.SelectForgeForTest(
+				config.Resolved{Slug: "grp/proj", SlugExplicit: true})
+			Expect(ok).To(BeFalse())
 		})
 
-		It("routes an explicit slug on a GitLab host to GitLab, trusted as-is", func() {
-			slug, kind, ok := eng.SelectForgeForTest(
+		It("degrades an explicit slug on an unknown host to no-forge (not a phantom gh '?')", func() {
+			_, _, ok := eng.SelectForgeForTest(
 				config.Resolved{Slug: "grp/proj", SlugExplicit: true, RemoteHost: "gitlab.enterprise.io"})
-			// gitlab.enterprise.io is not in GL.KnownHosts here, so it is unknown ->
-			// defaults to GitHub. A configured self-hosted host (below) routes to GL.
-			Expect(ok).To(BeTrue())
-			Expect(kind).To(Equal("github"))
-			Expect(slug).To(Equal("grp/proj"))
+			// gitlab.enterprise.io is not in GL.KnownHosts (e.g. glab isn't authed to
+			// it), so it belongs to no wired forge. Rather than guess GitHub and route
+			// a GitLab slug to gh (a phantom "?"), the cell degrades to "-". A
+			// configured self-hosted host (below) routes to GL.
+			Expect(ok).To(BeFalse())
 		})
 
 		It("host-qualifies an explicit slug on a known self-hosted GitLab host", func() {

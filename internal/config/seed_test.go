@@ -86,12 +86,12 @@ var _ = Describe("DiscoverClaudeProjects", func() {
 		roots, err := config.DiscoverClaudeProjects(root, git)
 		Expect(err).NotTo(HaveOccurred())
 
-		c := &config.Config{Projects: []config.Project{{Path: "/Users/me/work/herdle", GH: "o/h"}}}
+		c := &config.Config{Projects: []config.Project{{Path: "/Users/me/work/herdle", Slug: "o/h"}}}
 		for _, p := range roots {
 			_ = c.Add(config.Project{Path: p})
 		}
 		Expect(c.Projects).To(HaveLen(1)) // already present -> not re-added
-		Expect(c.Projects[0].GH).To(Equal("o/h"))
+		Expect(c.Projects[0].Slug).To(Equal("o/h"))
 		_ = errors.New // keep errors import tidy if unused elsewhere
 	})
 })

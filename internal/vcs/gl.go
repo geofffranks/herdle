@@ -1,7 +1,6 @@
 package vcs
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,13 +56,36 @@ func (m glMR) toPR() PR {
 		pr.State = "OPEN"
 	}
 	switch {
-	case m.HasConflicts, m.DetailedMergeStatus == "conflict", m.DetailedMergeStatus == "broken_status":
+	case m.HasConflicts, m.DetailedMergeStatus == "conflict":
 		pr.Mergeable = "CONFLICTING"
 	case m.DetailedMergeStatus == "mergeable":
 		pr.Mergeable = "MERGEABLE"
 	}
-	if m.DetailedMergeStatus == "requested_changes" {
+	// NOTE: detailed_merge_status == "broken_status" is deliberately NOT mapped to
+	// CONFLICTING. It signals GitLab could not compute mergeability (a transient
+	// failure), not an actual conflict; mapping it would show a false "✗ conflicts"
+	// on a cleanly-mergeable MR. Left unset, it classifies as neutral.
+	//
+	// GitLab only returns "mergeable" once ALL merge requirements pass, so the
+	// not-yet-ready states below name the specific blocker. Unlike GitHub (whose
+	// `mergeable` is blind to branch protection, rendering such PRs "ready"), we
+	// surface them as a "blocked" attention marker via BlockReason. "ci_still_running"
+	// / "checking" / "unchecked" are deliberately left neutral — they are transient
+	// "still computing" states, not a settled blocker. "ci_must_pass" reads as
+	// amber "checks not passed" rather than a hard red "checks failing": `mr list`
+	// returns no pipeline detail, so we cannot tell a failed pipeline from one that
+	// simply has not run.
+	switch m.DetailedMergeStatus {
+	case "requested_changes":
 		pr.ReviewDecision = "CHANGES_REQUESTED"
+	case "not_approved":
+		pr.BlockReason = "needs approval"
+	case "discussions_not_resolved":
+		pr.BlockReason = "unresolved threads"
+	case "need_rebase":
+		pr.BlockReason = "needs rebase"
+	case "ci_must_pass":
+		pr.BlockReason = "checks not passed"
 	}
 	return pr
 }
@@ -73,36 +95,20 @@ func (r glRunner) PRList(slug, state string) ([]PR, error) {
 	if state == "all" {
 		args = append(args, "--all")
 	}
-	// glab is occasionally flaky; retry once. Only accept a real JSON array — a
-	// transient failure must NOT look like "no MRs".
-	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		res, err := r.glab(args...)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if res.code != 0 {
-			lastErr = fmt.Errorf("glab mr list -R %s: %s", slug, strings.TrimSpace(res.stderr))
-			continue
-		}
-		out := strings.TrimSpace(res.stdout)
-		if !strings.HasPrefix(out, "[") {
-			lastErr = fmt.Errorf("glab mr list -R %s: unexpected output %q", slug, out)
-			continue
-		}
-		var mrs []glMR
-		if err := json.Unmarshal([]byte(out), &mrs); err != nil {
-			lastErr = fmt.Errorf("glab mr list -R %s: parse json: %w", slug, err)
-			continue
-		}
-		prs := make([]PR, len(mrs))
-		for i, m := range mrs {
-			prs[i] = m.toPR()
-		}
-		return prs, nil
+	// glab is occasionally flaky; retryJSONFetch retries once and only trusts a
+	// real JSON array, so a transient failure never looks like "no MRs". glab emits
+	// the raw GitLab API shape, so decode into glMR and map onto the neutral PR.
+	mrs, err := retryJSONFetch[glMR](fmt.Sprintf("glab mr list -R %s", slug), func() (result, error) {
+		return r.glab(args...)
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, lastErr
+	prs := make([]PR, len(mrs))
+	for i, m := range mrs {
+		prs[i] = m.toPR()
+	}
+	return prs, nil
 }
 
 // Available reports whether the glab binary can be located (HERDLE_GLAB override,

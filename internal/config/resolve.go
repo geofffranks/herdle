@@ -15,8 +15,8 @@ func (c *Config) Resolve(p Project, git vcs.GitRunner) (Resolved, error) {
 	r := Resolved{Path: p.Path, Name: filepath.Base(p.Path)}
 
 	// remote: explicit -> default -> origin -> upstream -> ""
-	// (origin-first: branches live on your push remote; the PR slug for forks
-	// comes from the gh= override.) autodetectedURL caches the URL fetched here so
+	// (origin-first: branches live on your push remote; for a fork, the PR slug
+	// comes from the slug= override.) autodetectedURL caches the URL fetched here so
 	// the slug/host branch can reuse it without a second RemoteURL call.
 	var autodetectedURL string
 	r.Remote = p.Remote
@@ -56,23 +56,17 @@ func (c *Config) Resolve(p Project, git vcs.GitRunner) (Resolved, error) {
 	// integration: explicit only (personal branch; never autodetected)
 	r.Integration = p.Integration
 
-	// slug: explicit gh= (legacy, GitHub) -> explicit slug= (forge by host) ->
-	// derived from the remote URL -> "".
-	switch {
-	case p.GH != "":
-		r.Slug = p.GH
-		r.SlugExplicit = true
-	case p.Slug != "":
+	// slug: explicit slug= (forge by host) -> derived from the remote URL -> "".
+	if p.Slug != "" {
 		r.Slug = p.Slug
 		r.SlugExplicit = true
 	}
 
 	// Host detection (and slug derivation when no override is set) runs whenever a
-	// remote exists, EXCEPT for a legacy gh= override — that is GitHub by
-	// definition and needs no host probe, so it leaves RemoteHost empty and skips
-	// the extra RemoteURL call. A neutral slug= override still probes the host so
-	// the dashboard can route it to GitHub vs GitLab.
-	if p.GH == "" && r.Remote != "" {
+	// remote exists. The host is what routes the project to GitHub vs GitLab, so it
+	// is always probed — even for an explicit slug= override, whose value is trusted
+	// but whose forge still comes from the remote host.
+	if r.Remote != "" {
 		// Reuse the URL cached during autodetection if available; otherwise fetch.
 		url := autodetectedURL
 		if url == "" {
@@ -136,6 +130,18 @@ func stripPort(host string) string {
 // owner/repo for GitHub, but GitLab allows arbitrarily nested groups
 // (group/subgroup/.../project), so any path of two or more non-empty segments is
 // accepted. Returns "" when the result is not path-shaped.
+//
+// Known, accepted limitation: this validates path SHAPE, not forge-specific
+// arity. A malformed 3+-segment github.com remote (e.g. ".../owner/repo/extra")
+// is therefore accepted here and only fails later, at the forge call, surfacing
+// as a "?" cell rather than degrading to "-". We do NOT guard it: forge identity
+// isn't known at this layer (a 3-segment path is a valid GitLab subgroup but an
+// invalid GitHub repo, and a GitHub Enterprise host is indistinguishable from a
+// self-hosted GitLab one here), so the only guard possible would special-case the
+// literal "github.com" — arbitrary, and for input that does not occur from a
+// real `git remote get-url`. Only auto-derived slugs reach this function;
+// explicit gh=/slug= overrides (which legitimately can be host-qualified and
+// 3-segment) bypass it.
 func slugFromURL(url string) string {
 	s := strings.TrimSpace(url)
 	switch {

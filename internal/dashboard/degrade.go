@@ -71,9 +71,20 @@ func forgeCLI(kind string) string {
 	return "gh"
 }
 
+// forgeAvailability probes each wired forge's CLI once, keyed by forge kind
+// ("github"/"gitlab"). Availability is a process-wide fact (binary on PATH), so
+// computing it once per run lets the per-project fan-out look it up by kind
+// instead of re-running Available() for every project.
+func (e Engine) forgeAvailability() map[string]bool {
+	avail := map[string]bool{"github": e.GH.Available()}
+	if e.GL != nil {
+		avail["gitlab"] = e.GL.Available()
+	}
+	return avail
+}
+
 // clientFor returns the runner for a forge kind. GitLab is only returned when a
-// glab runner is wired; everything else falls back to the (always-present) GH
-// runner, which keeps a legacy gh= override pointed at GitHub.
+// glab runner is wired; everything else uses the (always-present) GH runner.
 func (e Engine) clientFor(kind string) forgeClient {
 	if kind == "gitlab" && e.GL != nil {
 		return e.GL
@@ -90,9 +101,10 @@ func (e Engine) clientFor(kind string) forgeClient {
 // and a full https URL for glab (whose -R also accepts group/subgroup paths, so a
 // bare host prefix would be ambiguous). github.com / gitlab.com need no prefix.
 //
-// A legacy gh= override, or any explicit slug whose host is unknown (e.g. set
-// without a recognizable remote), is GitHub by default and trusted as-is — it may
-// already be HOST/OWNER/REPO, so it is never rewritten.
+// An explicit slug we can't route — its host belongs to no wired/known forge, or
+// it has no resolvable host at all — degrades to "-" rather than guessing a forge:
+// routing, say, a self-hosted GitLab slug over to gh would only produce a phantom
+// "?".
 func (e Engine) selectForge(r config.Resolved, rt forgeRouting) (forgeClient, string, string, bool) {
 	var kind string
 	if r.SlugExplicit {
@@ -101,8 +113,11 @@ func (e Engine) selectForge(r config.Resolved, rt forgeRouting) (forgeClient, st
 		}
 		kind = rt.kind(r.RemoteHost)
 		if kind == "" {
-			// legacy gh= / unknown host: GitHub, slug trusted exactly as given.
-			return e.clientFor("github"), r.Slug, "github", true
+			// An explicit slug= we can't route: either its host belongs to no
+			// wired/known forge (e.g. a self-hosted GitLab glab isn't authed to), or
+			// no host resolved at all. We can't know the forge, so degrade gracefully
+			// to "-" rather than guess GitHub and emit a phantom "?".
+			return nil, "", "", false
 		}
 	} else {
 		if r.Slug == "" || r.RemoteHost == "" {

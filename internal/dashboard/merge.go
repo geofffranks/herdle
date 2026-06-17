@@ -12,6 +12,7 @@ const (
 	MergeConflicts                           // mergeable == CONFLICTING
 	MergeChecksFailing                       // a blocking status check failed
 	MergeChangesRequested                    // reviewDecision == CHANGES_REQUESTED
+	MergeBlocked                             // not ready for a named non-hard reason (BlockReason): approval, rebase, threads, CI not yet passed
 )
 
 // rollupState is the reduction of a PR's statusCheckRollup.
@@ -38,6 +39,13 @@ func classifyMerge(pr vcs.PR) MergeStatus {
 	}
 	if pr.ReviewDecision == "CHANGES_REQUESTED" {
 		return MergeChangesRequested
+	}
+	// A named non-hard blocker (GitLab's not_approved / need_rebase /
+	// discussions_not_resolved / ci_must_pass). Checked before "ready": GitLab only
+	// reports mergeable once these clear, so the two are mutually exclusive, but
+	// the explicit ordering keeps a blocked MR from ever reading as ready.
+	if pr.BlockReason != "" {
+		return MergeBlocked
 	}
 	if pr.Mergeable == "MERGEABLE" && (rollup == rollupPassing || rollup == rollupNone) {
 		return MergeReady
@@ -92,8 +100,9 @@ func checkOutcome(c vcs.CheckRun) rollupState {
 
 // mergeNote renders a MergeStatus as a colored note segment. The glyph+text live
 // here (engine builds text, render applies color from Sev) — same split the sync
-// notes already use.
-func mergeNote(s MergeStatus) FlagNote {
+// notes already use. reason supplies the specific blocker text for MergeBlocked
+// (e.g. "needs approval"); it is ignored for every other status.
+func mergeNote(s MergeStatus, reason string) FlagNote {
 	switch s {
 	case MergeReady:
 		return FlagNote{Text: "✓ ready to merge", Sev: SevGreen}
@@ -103,6 +112,11 @@ func mergeNote(s MergeStatus) FlagNote {
 		return FlagNote{Text: "✗ checks failing", Sev: SevRed}
 	case MergeChangesRequested:
 		return FlagNote{Text: "✎ changes requested", Sev: SevYellow}
+	case MergeBlocked:
+		if reason == "" {
+			reason = "not ready"
+		}
+		return FlagNote{Text: "⚠ " + reason, Sev: SevYellow}
 	default:
 		return FlagNote{Text: "—", Sev: SevNone}
 	}

@@ -16,7 +16,6 @@ import (
 // projectCommand builds the `herdle project` command and its subcommands.
 func projectCommand() *cli.Command {
 	flags := []cli.Flag{
-		&cli.StringFlag{Name: "gh", Usage: "legacy GitHub owner/repo override (use --slug)"},
 		&cli.StringFlag{Name: "slug", Usage: "forge-agnostic [group/]owner/repo override (GitHub or GitLab, by remote host)"},
 		&cli.StringFlag{Name: "remote", Usage: "git remote name (autodetect if unset)"},
 		&cli.StringFlag{Name: "base", Usage: "trunk branch (autodetect if unset)"},
@@ -85,16 +84,6 @@ func parseManualArgs(args []string) (positionals []string, flags map[string]stri
 		}
 	}
 	return positionals, flags, set
-}
-
-// firstNonEmpty returns the first non-empty argument, or "" if all are empty.
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // normalizePath expands a leading ~, makes the path absolute, and cleans it.
@@ -171,7 +160,6 @@ func projectAdd(c *cli.Context) error {
 	}
 	if err := cfg.Add(config.Project{
 		Path:        path,
-		GH:          flagVals["gh"],
 		Slug:        flagVals["slug"],
 		Remote:      flagVals["remote"],
 		Base:        flagVals["base"],
@@ -202,7 +190,7 @@ func projectSet(c *cli.Context) error {
 		return fmt.Errorf("project set: exactly one <name|path> argument is required")
 	}
 	if len(flagSet) == 0 {
-		return fmt.Errorf("project set: no fields to update (pass at least one of --gh/--slug/--remote/--base/--integration)")
+		return fmt.Errorf("project set: no fields to update (pass at least one of --slug/--remote/--base/--integration)")
 	}
 	key, err := normalizePath(positionals[0])
 	if err != nil {
@@ -219,9 +207,6 @@ func projectSet(c *cli.Context) error {
 		return fmt.Errorf("project set: %w", err)
 	}
 	// Only flags the user actually passed are touched; an empty value clears.
-	if flagSet["gh"] {
-		cfg.Projects[idx].GH = flagVals["gh"]
-	}
 	if flagSet["slug"] {
 		cfg.Projects[idx].Slug = flagVals["slug"]
 	}
@@ -297,7 +282,7 @@ func projectList(c *cli.Context) error {
 			mark(p.Remote, r.Remote),
 			mark(p.Base, r.Base),
 			mark(p.Integration, r.Integration),
-			mark(firstNonEmpty(p.GH, p.Slug), r.Slug),
+			mark(p.Slug, r.Slug),
 		)
 	}
 	if err := tw.Flush(); err != nil {

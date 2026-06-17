@@ -36,7 +36,7 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 			out.line("  " + p.fpr(r.Number) + " " + p.fbranch(r.Head, 30) + " " +
 				p.fdesc(r.Title, 40) + "  " + p.ftklist(r.TKs) + "  " + p.fnotes(r.Notes))
 		}
-	} else if d.HasSlug && d.GHUnavailable {
+	} else if d.HasSlug && d.ForgeUnavailable {
 		out.line("")
 		out.line(p.hdr("— open " + noun + "s —"))
 		out.line("  (" + cli + " unavailable)")
@@ -93,10 +93,11 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 		p.grn, p.rst, p.red, p.rst, p.dim, p.rst, noun))
 	out.line(noun + " status: " + p.grn + "✓ ready to merge" + p.rst + " · " +
 		p.red + "✗ conflicts" + p.rst + " · " + p.red + "✗ checks failing" + p.rst + " · " +
-		p.yel + "✎ changes requested" + p.rst + " · " + p.dim + "— pending/draft/computing" + p.rst)
+		p.yel + "✎ changes requested" + p.rst + " · " + p.yel + "⚠ blocked" + p.rst + " · " +
+		p.dim + "— pending/draft/computing" + p.rst)
 	out.line(fmt.Sprintf("lifecycle: %s-%s (not started) → %sdesigned%s → %splanned%s → %sin-development%s → %spending-validation%s → %svalidated%s",
 		p.dim, p.rst, p.mag, p.rst, p.blu, p.rst, p.cyn, p.rst, p.yel, p.rst, p.grn, p.rst))
-	if d.GHAbsent {
+	if d.ForgeAbsent {
 		out.line(p.dim + cli + ": not found — " + noun + " sections hidden" + p.rst)
 	}
 

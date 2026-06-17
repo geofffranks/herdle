@@ -41,11 +41,3 @@ func padLeftWidth(s string, w int) string {
 // are ASCII plus a handful of single-column symbols (↑ ↓ ✗ ✓ ✎), none of them
 // zero- or double-width, so rune count is the correct display width here.
 func dispWidth(s string) int { return utf8.RuneCountInString(s) }
-
-// maxInt returns the larger of a and b.
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

@@ -15,9 +15,6 @@ type Config struct {
 // filled by Resolve.
 type Project struct {
 	Path string `toml:"path"`
-	// GH is the legacy GitHub-only owner/repo override. It still works and always
-	// means GitHub; Slug is the forge-agnostic replacement.
-	GH string `toml:"gh,omitempty"`
 	// Slug is the forge-agnostic [GROUP/]OWNER/REPO override. The forge (GitHub vs
 	// GitLab) is determined by the remote host, so this works for gitlab.com and
 	// self-hosted GitLab as well as GitHub Enterprise.
@@ -36,14 +33,12 @@ type Resolved struct {
 	Integration string
 	Slug        string
 	// RemoteHost is the host parsed from the resolved remote's URL ("" when there
-	// is no remote, the slug came only from a gh= override, or the URL is
-	// unparseable). The dashboard uses it to decide whether a remote is a GitHub
-	// (or GitHub Enterprise) host.
+	// is no remote or the URL is unparseable). The dashboard uses it to route the
+	// project to the right forge (GitHub/GitHub Enterprise vs GitLab/self-hosted).
 	RemoteHost string
-	// SlugExplicit is true when Slug came from the project's gh= or slug= override
-	// rather than from URL derivation; an explicit slug's value is trusted as-is.
-	// A legacy gh= override additionally leaves RemoteHost empty (it is GitHub by
-	// definition and needs no host probe); a neutral slug= override still resolves
-	// RemoteHost so the dashboard can route it to the right forge.
+	// SlugExplicit is true when Slug came from the project's slug= override rather
+	// than from URL derivation; an explicit slug's value is trusted as-is. Forge is
+	// still chosen by RemoteHost, so an explicit slug with no resolvable host
+	// degrades rather than guessing a forge.
 	SlugExplicit bool
 }

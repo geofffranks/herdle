@@ -39,9 +39,12 @@ When `lifecycle:` is unset, herdle *derives* `designed`/`planned` from a matchin
 `specs/*<tkid>*` / `plans/*<tkid>*` file on disk — but an explicitly set value
 always wins, so prefer to set it.
 
-## Bake Setup and Finalize tasks into every plan
+## Bake Setup, Code Review, and Finalize tasks into every plan
 
-Every implementation plan wraps its work in a fixed first and last task:
+Every implementation plan wraps its work in three fixed tasks: **Setup** first,
+then **Code Review** and **Finalize** as the last two, in that order. Code Review
+is its own standalone task — never folded into Finalize as a bullet, where it gets
+silently skipped.
 
 **Setup (first task):**
 
@@ -50,19 +53,37 @@ Every implementation plan wraps its work in a fixed first and last task:
 - Record the branch on the ticket (`branch:` frontmatter) and set
   `lifecycle: in-development`.
 
+**Code Review (second-to-last task):**
+
+Two passes, in order, each via a dispatched subagent. The invocation is fixed —
+run it exactly:
+
+1. `/code-review <branch> medium --fix`
+2. `/code-review <branch> high --fix`
+
+`--fix` is mandatory: without it the pass prints findings and changes nothing,
+which reads as "reviewed" but isn't. Do **not** add `--comment` — that posts to a
+PR, and no PR exists yet. Address every finding from both passes. Defer the review
+*process* to `superpowers:requesting-code-review`.
+
+<HARD-GATE>
+You MUST complete both passes before Finalize advances the lifecycle. A clean-
+looking diff does not exempt you — "looks fine" is not a review. Skipping or
+weakening either pass is a defect, not a judgment call.
+</HARD-GATE>
+
 **Finalize (last task):**
 
-- Run two code-review passes, applying fixes each time: dispatch a subagent
-  running `/code-review <branch> medium --fix`, then a second running
-  `/code-review <branch> high --fix`. Defer the review *process* to
-  `superpowers:requesting-code-review`; address any remaining findings.
-- Squash the branch's commits into one.
-- Set `lifecycle: pending-validation`.
+- Set `lifecycle: pending-validation` — **only after the Code Review task is
+  complete.** Both passes done and their findings addressed is the precondition
+  for this bump.
 - Write the validation doc (`docs/superpowers/validation/...-validation.md`) with
   concrete acceptance steps.
 - Where possible, write a script that exercises as much of the validation doc as
   it can, run it, and mark off the steps it covers before handing off. If those
   validations all pass, set `lifecycle: validated`.
+- Fix bugs as needed until the validation script passes.
+- Squash the branch's commits into one.
 - Do **not** open a PR here — opening a PR signals validated work. Leave that to
   `superpowers:finishing-a-development-branch`.
 

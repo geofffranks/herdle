@@ -28,6 +28,15 @@ func ClaudeDir() (string, error) {
 	return baseDir("CLAUDE_CONFIG_DIR", ".claude")
 }
 
+// SettingsPath returns the Claude Code settings file: <ClaudeDir>/settings.json.
+func SettingsPath() (string, error) {
+	dir, err := ClaudeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "settings.json"), nil
+}
+
 // Path returns the config file location: $HERDLE_CONFIG if set, else
 // ${XDG_CONFIG_HOME:-$HOME/.config}/herdle/config.toml.
 func Path() (string, error) {

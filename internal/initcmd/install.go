@@ -55,7 +55,7 @@ func Install(src fs.FS, claudeDir string, force bool) ([]Result, error) {
 		if readErr != nil {
 			return readErr
 		}
-		if writeErr := writeAtomic(dest, data); writeErr != nil {
+		if writeErr := writeAtomic(dest, data, 0o644); writeErr != nil {
 			return writeErr
 		}
 		results = append(results, Result{Path: dest, Action: action})
@@ -66,9 +66,11 @@ func Install(src fs.FS, claudeDir string, force bool) ([]Result, error) {
 
 // writeAtomic writes data to path via a temp file + rename, creating parent dirs.
 // Mirrors config.SaveTo's house style. os.CreateTemp makes the temp file 0o600,
-// so it is explicitly chmod'd to 0o644 before the rename — the spec (S7) installs
-// world-readable skills/rules, not owner-only files.
-func writeAtomic(path string, data []byte) error {
+// so it is explicitly chmod'd to mode before the rename — setting the final mode
+// on the temp file (not after the rename) means the destination is never briefly
+// visible at the wrong permissions. Skills/rules pass 0o644 (world-readable);
+// settings.json passes its preserved/owner-only mode.
+func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
@@ -77,7 +79,7 @@ func writeAtomic(path string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := tmp.Chmod(0o644); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmp.Name())
 		return err

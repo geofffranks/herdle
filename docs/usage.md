@@ -218,6 +218,25 @@ config (`~/.config/herdle/`) if it does not already exist. Flags:
 
 ---
 
+## Internal hook handlers
+
+herdle ships hidden subcommands under `herdle hook` for use by Claude Code's
+PreToolUse hook mechanism. These are not intended for direct use; Claude Code
+invokes them automatically when the hook is configured.
+
+### `herdle hook code-review-gate`
+
+```
+herdle hook code-review-gate
+```
+
+Reads a PreToolUse hook JSON payload from stdin and blocks a ticket
+`lifecycle: pending-validation` transition unless both a `medium` and `high`
+`/code-review` pass appear in the current session transcript. Exits 0 to allow
+or 2 to block; the block reason is written to stderr for the agent to see.
+
+---
+
 ## Command Reference
 
 | Command | Purpose |
@@ -233,3 +252,4 @@ config (`~/.config/herdle/`) if it does not already exist. Flags:
 | `herdle project rm <name>` | remove a project |
 | `herdle init` | write/refresh embedded skills + rules (`--force` overwrites after an upgrade; `--uninstall` removes them) |
 | `herdle doctor` | diagnose the herdle setup |
+| `herdle hook code-review-gate` | (internal) PreToolUse gate for `/code-review` Finalize passes |

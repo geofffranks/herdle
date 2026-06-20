@@ -39,6 +39,7 @@ type Env struct {
 	Assets       fs.FS    // embedded artifacts (assets.FS) — drives integrity
 	ClaudeDir    string   // ~/.claude: skills/, rules/, plugins/ live here
 	ConfigPath   string   // config.Path(): the herdle config.toml
+	SettingsPath string   // config.SettingsPath(): ~/.claude/settings.json
 	ExecPath     string   // os.Executable(): the running herdle binary
 	HerdleOnPath string   // exec.LookPath("herdle"); "" when not found
 	PathDirs     []string // PATH split on os.PathListSeparator
@@ -57,6 +58,7 @@ func Run(env Env) []Result {
 		checkHerdlePath,
 		checkIntegrity,
 		checkConfig,
+		checkGate,
 	}
 	rs := make([]Result, 0, len(checks))
 	for _, c := range checks {

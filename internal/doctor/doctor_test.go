@@ -42,6 +42,9 @@ func goodEnv() doctor.Env {
 	cfgPath := filepath.Join(GinkgoT().TempDir(), "config.toml")
 	Expect(os.WriteFile(cfgPath, []byte("[[project]]\npath = \"/x\"\n"), 0o600)).To(Succeed())
 
+	settingsPath := filepath.Join(claude, "settings.json")
+	Expect(os.WriteFile(settingsPath, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook code-review-gate"}]}]}}`), 0o600)).To(Succeed())
+
 	binDir := GinkgoT().TempDir()
 
 	git := &vcsfakes.FakeGitRunner{}
@@ -57,11 +60,12 @@ func goodEnv() doctor.Env {
 
 	return doctor.Env{
 		Git: git, GH: gh, GL: gl, TK: tk,
-		Assets:     assetsFS,
-		ClaudeDir:  claude,
-		ConfigPath: cfgPath,
-		ExecPath:   filepath.Join(binDir, "herdle"),
-		PathDirs:   []string{binDir},
+		Assets:       assetsFS,
+		ClaudeDir:    claude,
+		ConfigPath:   cfgPath,
+		SettingsPath: settingsPath,
+		ExecPath:     filepath.Join(binDir, "herdle"),
+		PathDirs:     []string{binDir},
 	}
 }
 
@@ -277,6 +281,25 @@ var _ = Describe("doctor config", func() {
 		r := find(doctor.Run(env), "config")
 		Expect(r.Status).To(Equal(doctor.Warn))
 		Expect(r.Remediation).To(ContainSubstring("herdle project add"))
+	})
+})
+
+var _ = Describe("doctor code-review gate", func() {
+	It("reports the code-review gate as wired", func() {
+		dir := GinkgoT().TempDir()
+		sp := filepath.Join(dir, "settings.json")
+		Expect(os.WriteFile(sp, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook code-review-gate"}]}]}}`), 0o600)).To(Succeed())
+		r := doctor.CheckGateForTest(doctor.Env{SettingsPath: sp})
+		Expect(r.Status).To(Equal(doctor.OK))
+	})
+
+	It("flags a missing code-review gate", func() {
+		dir := GinkgoT().TempDir()
+		sp := filepath.Join(dir, "settings.json")
+		Expect(os.WriteFile(sp, []byte(`{}`), 0o600)).To(Succeed())
+		r := doctor.CheckGateForTest(doctor.Env{SettingsPath: sp})
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Remediation).To(ContainSubstring("herdle init"))
 	})
 })
 

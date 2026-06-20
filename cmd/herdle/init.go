@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/urfave/cli/v2"
 
@@ -39,6 +40,15 @@ func initAction(c *cli.Context) error {
 		for _, r := range results {
 			fmt.Fprintf(w, "%s %s\n", r.Action, r.Path)
 		}
+		settingsPath, err := config.SettingsPath()
+		if err != nil {
+			return err
+		}
+		sres, err := initcmd.UnmergeSettings(settingsPath)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "%s %s (code-review-gate hook)\n", sres.Action, sres.Path)
 		fmt.Fprintf(w, "uninstalled %d file(s); config and CLAUDE.md left untouched\n", len(results))
 		return nil
 	}
@@ -50,6 +60,20 @@ func initAction(c *cli.Context) error {
 	for _, r := range results {
 		fmt.Fprintf(w, "%s %s\n", r.Action, r.Path)
 	}
+
+	settingsPath, err := config.SettingsPath()
+	if err != nil {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	sres, err := initcmd.MergeSettings(settingsPath, exe+" hook code-review-gate")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "%s %s (code-review-gate hook)\n", sres.Action, sres.Path)
 
 	configPath, err := config.Path()
 	if err != nil {

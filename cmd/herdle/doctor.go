@@ -49,6 +49,10 @@ func buildDoctorEnv() (doctor.Env, error) {
 	if err != nil {
 		return doctor.Env{}, err
 	}
+	settingsPath, err := config.SettingsPath()
+	if err != nil {
+		return doctor.Env{}, err
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return doctor.Env{}, err
@@ -62,6 +66,7 @@ func buildDoctorEnv() (doctor.Env, error) {
 		Assets:       assets.FS,
 		ClaudeDir:    claudeDir,
 		ConfigPath:   configPath,
+		SettingsPath: settingsPath,
 		ExecPath:     exe,
 		HerdleOnPath: herdleOnPath,
 		PathDirs:     filepath.SplitList(os.Getenv("PATH")),

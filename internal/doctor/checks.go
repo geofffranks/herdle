@@ -196,6 +196,27 @@ func checkConfig(env Env) Result {
 		Detail: fmt.Sprintf("present (%d project(s))", len(cfg.Projects))}
 }
 
+// checkGate verifies the code-review Finalize gate is wired into settings.json. A
+// substring check is intentional: it is robust to formatting and does not couple
+// doctor to the settings schema.
+func checkGate(env Env) Result {
+	const name = "code-review gate"
+	data, err := os.ReadFile(env.SettingsPath) // #nosec G304 -- SettingsPath is under ClaudeDir
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return Result{Name: name, Status: Fail, Detail: "settings.json not found at " + env.SettingsPath,
+				Remediation: "run: herdle init"}
+		}
+		return Result{Name: name, Status: Fail, Detail: "cannot read " + env.SettingsPath + ": " + err.Error(),
+			Remediation: "check permissions on " + env.SettingsPath}
+	}
+	if bytes.Contains(data, []byte("code-review-gate")) {
+		return Result{Name: name, Status: OK, Detail: "wired in settings.json"}
+	}
+	return Result{Name: name, Status: Fail, Detail: "not wired in " + env.SettingsPath,
+		Remediation: "run: herdle init"}
+}
+
 // scanForDir walks root (bounded to maxDepth) for a directory named target.
 // scanned is false when root is absent or not a directory — the caller treats
 // that as indeterminate, never a failure.

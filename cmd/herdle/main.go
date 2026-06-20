@@ -32,6 +32,7 @@ func newApp() *cli.App {
 			projectCommand(),
 			initCommand(),
 			doctorCommand(),
+			hookCommand(),
 		},
 	}
 }

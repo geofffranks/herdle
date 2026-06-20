@@ -180,3 +180,12 @@ var _ = Describe("baseDir-backed path helpers", func() {
 		Expect(p).To(Equal(filepath.Join(claudeDir, "projects")))
 	})
 })
+
+var _ = Describe("SettingsPath", func() {
+	It("is settings.json under ClaudeDir", func() {
+		GinkgoT().Setenv("CLAUDE_CONFIG_DIR", "/tmp/claude")
+		p, err := config.SettingsPath()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p).To(Equal("/tmp/claude/settings.json"))
+	})
+})

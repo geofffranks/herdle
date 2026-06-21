@@ -1,12 +1,14 @@
-// Package gate implements the code-review Finalize gate: given a PreToolUse hook
-// payload and the session transcript, it decides whether a ticket may transition
-// to lifecycle: pending-validation. The core is pure (no process/FS access) so it
-// is unit-tested directly; the cmd layer adapts stdin and exit codes.
+// Package gate implements the herdle lifecycle gatekeeper: given a PreToolUse hook
+// payload and pre-gathered evidence, it decides whether a ticket may transition
+// to lifecycle: pending-validation, validated, or in-development. The core is pure
+// (no process/FS access) so it is unit-tested directly; the cmd layer adapts stdin,
+// reads evidence from disk, and maps exit codes.
 package gate
 
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -14,11 +16,10 @@ import (
 
 // HookInput is the normalized subset of the PreToolUse payload the gate needs.
 type HookInput struct {
-	ToolName       string
-	FilePath       string // tool_input.file_path (Edit/Write)
-	WrittenText    string // tool_input.new_string, falling back to tool_input.content
-	Command        string // tool_input.command (Bash)
-	TranscriptPath string // top-level transcript_path
+	ToolName    string
+	FilePath    string // tool_input.file_path (Edit/Write)
+	WrittenText string // tool_input.new_string, falling back to tool_input.content
+	Command     string // tool_input.command (Bash)
 }
 
 // Decision is the gate's verdict. Missing names the absent passes; Reason is the
@@ -33,9 +34,51 @@ type Decision struct {
 // class stops at shell separators/quotes so the captured path is just the file.
 var ticketPathRE = regexp.MustCompile(`[^\s'"]*\.tickets/[A-Za-z0-9._-]+\.md`)
 
-// overrideRE matches the override marker followed by a non-empty reason; a bare
-// marker (no reason) deliberately does not match.
-var overrideRE = regexp.MustCompile(`\[skip-code-review-gate\]\s*\S+`)
+var (
+	// Each override matches "[<token>] <reason>"; a bare token (no reason)
+	// deliberately does not match.
+	overrideCodeReview = regexp.MustCompile(`\[skip-code-review-gate\]\s*\S+`)
+	overrideValidation = regexp.MustCompile(`\[skip-validation-gate\]\s*\S+`)
+	overrideBranch     = regexp.MustCompile(`\[skip-branch-linkage\]\s*\S+`)
+
+	// lifecycleRE captures a ticket's lifecycle frontmatter value.
+	lifecycleRE = regexp.MustCompile(`(?m)^lifecycle:\s*(\S+)`)
+	// lifecycleLineRE matches a real "lifecycle: <state>" frontmatter LINE in
+	// Edit/Write text: the value must be the whole rest of the line (anchored at
+	// end), so a value merely mentioned in prose (e.g. "lifecycle: validated is
+	// the goal") or a bogus suffixed value ("validated-ish") does not match, and
+	// a parenthetical note ("(lifecycle: validated)") is skipped (line not started
+	// by "lifecycle:"). Anchored at column 0 (no leading whitespace), matching the
+	// on-disk frontmatter reader lifecycleRE. The first match is the frontmatter line.
+	lifecycleLineRE = regexp.MustCompile(`(?m)^lifecycle:\s*(in-development|pending-validation|validated)\s*$`)
+	// linkRE matches a non-empty branch:/external-ref: frontmatter field — the
+	// tk⇄branch correlation the dashboard needs.
+	linkRE = regexp.MustCompile(`(?m)^(branch|external-ref):\s*\S+`)
+)
+
+// HasOverride reports whether text carries the code-review override with a reason.
+func HasOverride(text string) bool { return overrideCodeReview.MatchString(text) }
+
+// editedText is the text a transition wrote: the Bash command, else the
+// Edit/Write new_string/content. Used for override and link scanning.
+func editedText(in HookInput) string {
+	if in.ToolName == "Bash" {
+		return in.Command
+	}
+	return in.WrittenText
+}
+
+// currentLifecycle returns the lifecycle value in a ticket's frontmatter, or ""
+// when absent.
+func currentLifecycle(ticket string) string {
+	if m := lifecycleRE.FindStringSubmatch(ticket); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// hasLink reports whether text carries a non-empty branch:/external-ref: field.
+func hasLink(text string) bool { return linkRE.MatchString(text) }
 
 // writeIndicators are tokens that signal a Bash command writes to a file. ">"
 // also covers ">>"; " -i" catches sed/perl in-place edits (a sed/perl write
@@ -47,31 +90,92 @@ var overrideRE = regexp.MustCompile(`\[skip-code-review-gate\]\s*\S+`)
 var writeIndicators = []string{">", "tee", "printf", " -i"}
 
 const (
-	ticketsMarker = "/.tickets/"
-	pendingMarker = "lifecycle: pending-validation"
-	indevMarker   = "lifecycle: in-development"
+	ticketsMarker   = "/.tickets/"
+	indevMarker     = "lifecycle: in-development"
+	pendingMarker   = "lifecycle: pending-validation"
+	validatedMarker = "lifecycle: validated"
 )
 
-// ShouldEvaluate reports whether this tool call is a ticket pending-validation
-// transition the gate must evaluate, and the ticket file path it targets.
-func ShouldEvaluate(in HookInput) (ticketPath string, gate bool) {
+// Transition is the lifecycle bump a gating tool call performs; None means the
+// call is not a gated transition and must be allowed.
+type Transition int
+
+const (
+	None Transition = iota
+	ToInDevelopment
+	ToPendingValidation
+	ToValidated
+)
+
+// ShouldEvaluate classifies a tool call as a gated lifecycle transition and
+// returns the ticket file it targets. A None transition means the call is not a
+// gated ticket edit and must be allowed. Edit/Write classify by the actual
+// "lifecycle: <state>" frontmatter LINE in the written text (line-anchored, so a
+// lifecycle value mentioned in prose/notes does not misclassify); Bash matches
+// the same value as a substring in the command plus a write indicator and a
+// .tickets path. Bash detection is best-effort — an obfuscated write (base64,
+// split key/value) or a command naming multiple lifecycle values (e.g. a sed
+// old→new) can misclassify or slip; the override markers are the escape hatch.
+func ShouldEvaluate(in HookInput) (ticketPath string, t Transition) {
 	switch in.ToolName {
 	case "Edit", "Write":
-		if strings.Contains(in.FilePath, ticketsMarker) && strings.Contains(in.WrittenText, pendingMarker) {
-			return in.FilePath, true
+		if !strings.Contains(in.FilePath, ticketsMarker) {
+			return "", None
 		}
+		return in.FilePath, transitionFromWritten(in.WrittenText)
 	case "Bash":
-		// Best-effort: a Bash write (sed/echo/printf) of pending-validation into a
-		// ticket. An obfuscated write (base64, heredoc-to-var) can still slip — a
-		// documented limitation. We require a tickets path AND a write indicator so
-		// a read-only grep mentioning the marker is not gated.
-		if strings.Contains(in.Command, "pending-validation") && hasWriteIndicator(in.Command) {
-			if m := ticketPathRE.FindString(in.Command); m != "" {
-				return m, true
-			}
+		bt := transitionFromCommand(in.Command)
+		if bt == None || !hasWriteIndicator(in.Command) {
+			return "", None
+		}
+		if m := ticketPathRE.FindString(in.Command); m != "" {
+			return m, bt
 		}
 	}
-	return "", false
+	return "", None
+}
+
+// transitionFromWritten classifies an Edit/Write by the first real
+// "lifecycle: <state>" frontmatter line in its text. The first match is the
+// frontmatter field (it precedes any body prose); a value mentioned in a note or
+// prose line (which does not begin a line with "lifecycle:" followed only by the
+// value) is ignored.
+func transitionFromWritten(text string) Transition {
+	if m := lifecycleLineRE.FindStringSubmatch(text); m != nil {
+		return transitionForValue(m[1])
+	}
+	return None
+}
+
+// transitionFromCommand classifies a Bash command by substring. validated and
+// pending-validation are distinct markers (they diverge at "validat-ed" vs
+// "validat-ion"); a command naming more than one lifecycle value picks the
+// highest-precedence match here, a documented best-effort limitation.
+func transitionFromCommand(cmd string) Transition {
+	switch {
+	case strings.Contains(cmd, validatedMarker):
+		return ToValidated
+	case strings.Contains(cmd, pendingMarker):
+		return ToPendingValidation
+	case strings.Contains(cmd, indevMarker):
+		return ToInDevelopment
+	default:
+		return None
+	}
+}
+
+// transitionForValue maps a lifecycle state value to its transition.
+func transitionForValue(v string) Transition {
+	switch v {
+	case "validated":
+		return ToValidated
+	case "pending-validation":
+		return ToPendingValidation
+	case "in-development":
+		return ToInDevelopment
+	default:
+		return None
+	}
 }
 
 func hasWriteIndicator(cmd string) bool {
@@ -82,9 +186,6 @@ func hasWriteIndicator(cmd string) bool {
 	}
 	return false
 }
-
-// HasOverride reports whether text carries the override marker with a reason.
-func HasOverride(text string) bool { return overrideRE.MatchString(text) }
 
 var (
 	commandArgsRE   = regexp.MustCompile(`(?s)<command-args>(.*?)</command-args>`)
@@ -169,7 +270,10 @@ func EffortsFromTranscript(r io.Reader, ticketPath string) map[string]bool {
 				if text == "" {
 					text = ei.Content
 				}
-				if sameTicket(ei.FilePath, ticketPath) && strings.Contains(text, indevMarker) && pos > indevPos {
+				// Line-anchored (not a bare substring) so a ticket NOTE that merely
+				// mentions "lifecycle: in-development" does not advance the bound and
+				// wrongly exclude this session's earlier /code-review passes.
+				if sameTicket(ei.FilePath, ticketPath) && transitionFromWritten(text) == ToInDevelopment && pos > indevPos {
 					indevPos = pos
 				}
 			}
@@ -215,28 +319,41 @@ func sameTicket(a, b string) bool {
 	return a == b || strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
 }
 
-// Decide is the gate verdict for one tool call. A non-gating call is allowed
-// immediately. A gating call is allowed if it carries the override marker, else
-// the transcript must show both medium and high passes after the in-development
-// bound. A nil transcript (open failed / absent) fails closed: a gating edit we
-// cannot verify is treated as not verified.
-func Decide(in HookInput, transcript io.Reader) Decision {
-	ticketPath, gating := ShouldEvaluate(in)
-	if !gating {
+// Env carries everything Decide needs, pre-read by the cmd adapter so the core
+// stays free of process and filesystem access.
+type Env struct {
+	Transition      Transition
+	TicketPath      string    // gated ticket file, for the transcript bound
+	Transcript      io.Reader // ToPendingValidation; nil if unreadable
+	TicketContent   string    // on-disk ticket (pre-edit); ToValidated / ToInDevelopment
+	TicketReadOK    bool      // the on-disk ticket was readable
+	ValidationDocs  []string  // ToValidated: contents of matched validation docs
+	ValidationFound bool      // ToValidated: at least one validation doc matched
+}
+
+// Decide is the gatekeeper verdict for one tool call, routed by transition. The
+// adapter has already classified the transition and gathered Env.
+func Decide(in HookInput, env Env) Decision {
+	switch env.Transition {
+	case ToPendingValidation:
+		return decidePending(in, env)
+	case ToValidated:
+		return decideValidated(in, env)
+	case ToInDevelopment:
+		return decideInDevelopment(in, env)
+	default: // None or unknown
 		return Decision{Allow: true}
 	}
-	overrideText := in.WrittenText
-	if in.ToolName == "Bash" {
-		overrideText = in.Command
-	}
-	if HasOverride(overrideText) {
+}
+
+func decidePending(in HookInput, env Env) Decision {
+	if HasOverride(editedText(in)) {
 		return Decision{Allow: true}
 	}
-	if transcript == nil {
-		return Decision{Allow: false, Missing: []string{"medium", "high"},
-			Reason: failClosedReason}
+	if env.Transcript == nil {
+		return Decision{Allow: false, Missing: []string{"medium", "high"}, Reason: failClosedReason}
 	}
-	efforts := EffortsFromTranscript(transcript, ticketPath)
+	efforts := EffortsFromTranscript(env.Transcript, env.TicketPath)
 	var missing []string
 	if !efforts["medium"] {
 		missing = append(missing, "medium")
@@ -250,11 +367,103 @@ func Decide(in HookInput, transcript io.Reader) Decision {
 	return Decision{Allow: false, Missing: missing, Reason: blockReason(missing)}
 }
 
-const failClosedReason = "Finalize gate: cannot read the session transcript to verify the /code-review passes. " +
+func decideValidated(in HookInput, env Env) Decision {
+	if overrideValidation.MatchString(editedText(in)) {
+		return Decision{Allow: true}
+	}
+	// Monotonic: confirm the prior on-disk state is pending-validation. An
+	// unreadable ticket fails closed — we cannot confirm the bump is legal.
+	if !env.TicketReadOK {
+		return Decision{Allow: false, Reason: validatedUnreadableReason}
+	}
+	switch currentLifecycle(env.TicketContent) {
+	case "validated":
+		return Decision{Allow: true} // idempotent re-write of an already-validated ticket
+	case "pending-validation":
+		// fall through to the open-items check
+	default:
+		return Decision{Allow: false, Reason: monotonicReason}
+	}
+	// Open-items: a validation doc must exist and have zero unchecked boxes.
+	if !env.ValidationFound {
+		return Decision{Allow: false, Reason: missingDocReason}
+	}
+	open := 0
+	for _, d := range env.ValidationDocs {
+		open += OpenItemCount(d)
+	}
+	if open > 0 {
+		return Decision{Allow: false, Reason: openItemsReason(open)}
+	}
+	return Decision{Allow: true}
+}
+
+func decideInDevelopment(in HookInput, env Env) Decision {
+	if overrideBranch.MatchString(editedText(in)) {
+		return Decision{Allow: true}
+	}
+	// A link in the edit itself (Setup may add branch: and the bump together) or
+	// already on the on-disk ticket both satisfy the gate.
+	if hasLink(editedText(in)) || (env.TicketReadOK && hasLink(env.TicketContent)) {
+		return Decision{Allow: true}
+	}
+	return Decision{Allow: false, Reason: branchLinkageReason}
+}
+
+const failClosedReason = "Gatekeeper: cannot read the session transcript to verify the /code-review passes. " +
 	"Re-run after invoking the code-review Skill for medium and high, or add [skip-code-review-gate] <reason>."
 
+const monotonicReason = "Gatekeeper: lifecycle:validated requires the ticket to be at " +
+	"pending-validation first (no skipping). Bump to pending-validation (which runs the code-review " +
+	"check), validate, then set validated — or add [skip-validation-gate] <reason>."
+
+const missingDocReason = "Gatekeeper: lifecycle:validated requires a validation doc " +
+	"(docs/superpowers/validation/*<tkid>*). Write one with concrete acceptance steps, check them " +
+	"off, then set validated — or add [skip-validation-gate] <reason>."
+
+const validatedUnreadableReason = "Gatekeeper: cannot read the ticket to confirm it is at " +
+	"pending-validation before validated. Re-run, or add [skip-validation-gate] <reason>."
+
+const branchLinkageReason = "Gatekeeper: lifecycle:in-development requires the ticket to carry a " +
+	"branch: or external-ref so herdle can correlate it. Add one (Setup records branch:), or add " +
+	"[skip-branch-linkage] <reason>."
+
+func openItemsReason(n int) string {
+	return fmt.Sprintf("Gatekeeper: lifecycle:validated is blocked — the validation doc still has "+
+		"%d unchecked item(s) (\"- [ ]\"). Human validation steps must be checked before validated. "+
+		"Check them off, or add [skip-validation-gate] <reason>.", n)
+}
+
+// taskItemRE matches a Markdown task-list item; the capture is the box content
+// (" " unchecked, "x"/"X" checked).
+var taskItemRE = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
+
+// OpenItemCount returns the number of unchecked task items ("- [ ]") in a
+// validation document. Lines inside fenced code blocks (```) are skipped so an
+// example checkbox in prose does not count; a checked box never counts.
+func OpenItemCount(doc string) int {
+	n := 0
+	inFence := false
+	sc := bufio.NewScanner(strings.NewReader(doc))
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if m := taskItemRE.FindStringSubmatch(line); m != nil && m[1] == " " {
+			n++
+		}
+	}
+	return n
+}
+
 func blockReason(missing []string) string {
-	return "Finalize gate: lifecycle:pending-validation requires both /code-review passes this session. " +
+	return "Gatekeeper: lifecycle:pending-validation requires both /code-review passes this session. " +
 		"Missing: " + strings.Join(missing, ", ") + ". Invoke the code-review Skill directly (not a hand-rolled " +
 		"sweep or a subagent), or add [skip-code-review-gate] <reason>."
 }

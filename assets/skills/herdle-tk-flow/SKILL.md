@@ -73,6 +73,28 @@ Each ticket carries a `lifecycle:` field tracking where the work is:
   artifacts on disk (see `herdle-tk-artifacts`); an explicitly set value always
   wins.
 
+## Lifecycle gates
+
+herdle installs a PreToolUse hook (`herdle hook gatekeeper`) that **mechanically
+blocks** three forward transitions until their preconditions hold. Do the
+precondition first and the gate is invisible; the blocks below are the backstop,
+not the place to learn the rule.
+
+- **→ in-development** — set `branch:` (or `external-ref`) on the ticket *first*,
+  so the dashboard can correlate it.
+- **→ pending-validation** — both `/code-review` passes (`medium`, then `high`)
+  must have run in this session.
+- **→ validated** — the ticket must already be at `pending-validation` (never jump
+  straight from in-development), **and** every `- [ ]` in its validation doc must
+  be checked. Automated steps you ran get checked off by you; human-only steps stay
+  open until a human checks them — so leave the ticket at `pending-validation` and
+  let the human flip it to `validated`.
+
+Each gate has an explicit, reason-bearing override for the rare legitimate case:
+`[skip-branch-linkage] <reason>`, `[skip-code-review-gate] <reason>`,
+`[skip-validation-gate] <reason>`. Overrides are exceptional — prefer satisfying
+the precondition.
+
 ## Reading the herdle dashboard
 
 - Run **`herdle`** inside a repo for that repo's **drilldown**; run it **outside**

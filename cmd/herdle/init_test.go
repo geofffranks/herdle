@@ -91,11 +91,11 @@ var _ = Describe("herdle init", func() {
 
 	settings := func() string { return filepath.Join(home, ".claude", "settings.json") }
 
-	It("wires the code-review gate into settings.json", func() {
+	It("wires the gatekeeper hook into settings.json", func() {
 		Expect(app.Run([]string{"herdle", "init"})).To(Succeed())
 		b, err := os.ReadFile(settings())
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(b)).To(ContainSubstring("hook code-review-gate"))
+		Expect(string(b)).To(ContainSubstring("hook gatekeeper"))
 	})
 
 	It("--uninstall removes the gate from settings.json", func() {
@@ -104,6 +104,6 @@ var _ = Describe("herdle init", func() {
 		Expect(a.Run([]string{"herdle", "init", "--uninstall"})).To(Succeed())
 		b, err := os.ReadFile(settings())
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(b)).NotTo(ContainSubstring("code-review-gate"))
+		Expect(string(b)).NotTo(ContainSubstring("gatekeeper"))
 	})
 })

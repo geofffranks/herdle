@@ -10,10 +10,24 @@ import (
 	"strings"
 )
 
-const gateMarker = "code-review-gate" // identifies our PreToolUse entry across runs
+const gateMarker = "gatekeeper" // identifies our current PreToolUse entry
+
+// knownGateMarkers are the current and prior names of our gate command;
+// dropGateEntries removes entries matching any of them so `herdle init` migrates
+// a stale install idempotently.
+var knownGateMarkers = []string{gateMarker, "code-review-gate"}
+
+func containsAnyGateMarker(s string) bool {
+	for _, m := range knownGateMarkers {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	return false
+}
 
 // MergeSettings ensures settings.json carries exactly one PreToolUse entry that
-// runs the code-review gate via command. It is idempotent and self-healing: an
+// runs the gatekeeper hook via command. It is idempotent and self-healing: an
 // existing gate entry with a stale command is updated. All other keys and hooks
 // are preserved. Top-level key order follows Go's json marshaller (sorted).
 func MergeSettings(path, command string) (Result, error) {
@@ -45,7 +59,7 @@ func MergeSettings(path, command string) (Result, error) {
 	}
 	// Written vs Overwritten: Overwritten when a gate entry already existed.
 	action := Written
-	if bytes.Contains(before, []byte(gateMarker)) {
+	if containsAnyGateMarker(string(before)) {
 		action = Overwritten
 	}
 	return Result{Path: path, Action: action}, nil
@@ -114,7 +128,7 @@ func entryIsGate(e interface{}) bool {
 		if !ok {
 			continue
 		}
-		if cmd, ok := hm["command"].(string); ok && strings.Contains(cmd, gateMarker) {
+		if cmd, ok := hm["command"].(string); ok && containsAnyGateMarker(cmd) {
 			return true
 		}
 	}

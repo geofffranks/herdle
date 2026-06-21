@@ -48,7 +48,7 @@ func initAction(c *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "%s %s (code-review-gate hook)\n", sres.Action, sres.Path)
+		fmt.Fprintf(w, "%s %s (gatekeeper hook)\n", sres.Action, sres.Path)
 		fmt.Fprintf(w, "uninstalled %d file(s); config and CLAUDE.md left untouched\n", len(results))
 		return nil
 	}
@@ -69,11 +69,11 @@ func initAction(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	sres, err := initcmd.MergeSettings(settingsPath, exe+" hook code-review-gate")
+	sres, err := initcmd.MergeSettings(settingsPath, exe+" hook gatekeeper")
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "%s %s (code-review-gate hook)\n", sres.Action, sres.Path)
+	fmt.Fprintf(w, "%s %s (gatekeeper hook)\n", sres.Action, sres.Path)
 
 	configPath, err := config.Path()
 	if err != nil {

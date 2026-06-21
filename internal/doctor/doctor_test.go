@@ -43,7 +43,7 @@ func goodEnv() doctor.Env {
 	Expect(os.WriteFile(cfgPath, []byte("[[project]]\npath = \"/x\"\n"), 0o600)).To(Succeed())
 
 	settingsPath := filepath.Join(claude, "settings.json")
-	Expect(os.WriteFile(settingsPath, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook code-review-gate"}]}]}}`), 0o600)).To(Succeed())
+	Expect(os.WriteFile(settingsPath, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook gatekeeper"}]}]}}`), 0o600)).To(Succeed())
 
 	binDir := GinkgoT().TempDir()
 
@@ -284,21 +284,32 @@ var _ = Describe("doctor config", func() {
 	})
 })
 
-var _ = Describe("doctor code-review gate", func() {
-	It("reports the code-review gate as wired", func() {
+var _ = Describe("doctor lifecycle gatekeeper", func() {
+	It("reports the lifecycle gatekeeper as wired", func() {
 		dir := GinkgoT().TempDir()
 		sp := filepath.Join(dir, "settings.json")
-		Expect(os.WriteFile(sp, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook code-review-gate"}]}]}}`), 0o600)).To(Succeed())
+		Expect(os.WriteFile(sp, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook gatekeeper"}]}]}}`), 0o600)).To(Succeed())
 		r := doctor.CheckGateForTest(doctor.Env{SettingsPath: sp})
 		Expect(r.Status).To(Equal(doctor.OK))
 	})
 
-	It("flags a missing code-review gate", func() {
+	It("flags a missing gatekeeper (not wired at all)", func() {
 		dir := GinkgoT().TempDir()
 		sp := filepath.Join(dir, "settings.json")
 		Expect(os.WriteFile(sp, []byte(`{}`), 0o600)).To(Succeed())
 		r := doctor.CheckGateForTest(doctor.Env{SettingsPath: sp})
 		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Detail).To(ContainSubstring("not wired"))
+		Expect(r.Remediation).To(ContainSubstring("herdle init"))
+	})
+
+	It("flags stale code-review-gate wiring distinctly from not-wired (pre-rename)", func() {
+		dir := GinkgoT().TempDir()
+		sp := filepath.Join(dir, "settings.json")
+		Expect(os.WriteFile(sp, []byte(`{"hooks":{"PreToolUse":[{"matcher":"Edit|Write|Bash","hooks":[{"type":"command","command":"/x/herdle hook code-review-gate"}]}]}}`), 0o600)).To(Succeed())
+		r := doctor.CheckGateForTest(doctor.Env{SettingsPath: sp})
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Detail).To(ContainSubstring("stale")) // distinguishes the stale branch from the generic not-wired Fail
 		Expect(r.Remediation).To(ContainSubstring("herdle init"))
 	})
 })

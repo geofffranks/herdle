@@ -224,16 +224,27 @@ herdle ships hidden subcommands under `herdle hook` for use by Claude Code's
 PreToolUse hook mechanism. These are not intended for direct use; Claude Code
 invokes them automatically when the hook is configured.
 
-### `herdle hook code-review-gate`
+### `herdle hook gatekeeper`
 
 ```
-herdle hook code-review-gate
+herdle hook gatekeeper
 ```
 
-Reads a PreToolUse hook JSON payload from stdin and blocks a ticket
-`lifecycle: pending-validation` transition unless both a `medium` and `high`
-`/code-review` pass appear in the current session transcript. Exits 0 to allow
-or 2 to block; the block reason is written to stderr for the agent to see.
+Reads a PreToolUse hook JSON payload from stdin and enforces herdle lifecycle
+transitions. It gates three transitions:
+
+- **`lifecycle: pending-validation`** — both a `medium` and `high` `/code-review`
+  pass must appear in the session transcript. Override: `[skip-code-review-gate] <reason>`.
+- **`lifecycle: validated`** — the ticket must already be at `pending-validation`
+  (monotonic), a validation doc must exist under
+  `docs/superpowers/validation/*<tkid>*`, and every checkbox in it must be
+  checked. Override: `[skip-validation-gate] <reason>`.
+- **`lifecycle: in-development`** — the ticket must carry a `branch:` or
+  `external-ref:` field (in the edit or already on disk). Override:
+  `[skip-branch-linkage] <reason>`.
+
+Exits 0 to allow or 2 to block; the block reason is written to stderr for the
+agent to see.
 
 ---
 
@@ -252,4 +263,4 @@ or 2 to block; the block reason is written to stderr for the agent to see.
 | `herdle project rm <name>` | remove a project |
 | `herdle init` | write/refresh embedded skills + rules (`--force` overwrites after an upgrade; `--uninstall` removes them) |
 | `herdle doctor` | diagnose the herdle setup |
-| `herdle hook code-review-gate` | (internal) PreToolUse gate for `/code-review` Finalize passes |
+| `herdle hook gatekeeper` | (internal) PreToolUse gate enforcing herdle lifecycle transitions |

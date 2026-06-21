@@ -1,6 +1,7 @@
 package gate_test
 
 import (
+	"io"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,36 +11,78 @@ import (
 )
 
 var _ = Describe("ShouldEvaluate", func() {
-	It("gates an Edit that writes pending-validation into a ticket", func() {
-		p, g := gate.ShouldEvaluate(gate.HookInput{
-			ToolName: "Edit", FilePath: "/repo/.tickets/her-5s12.md",
-			WrittenText: "lifecycle: pending-validation\n"})
-		Expect(g).To(BeTrue())
+	It("classifies an Edit that writes pending-validation", func() {
+		p, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her-5s12.md", WrittenText: "lifecycle: pending-validation\n"})
+		Expect(t).To(Equal(gate.ToPendingValidation))
 		Expect(p).To(Equal("/repo/.tickets/her-5s12.md"))
 	})
-	It("ignores a ticket edit not touching pending-validation", func() {
-		_, g := gate.ShouldEvaluate(gate.HookInput{
-			ToolName: "Write", FilePath: "/repo/.tickets/her-5s12.md",
-			WrittenText: "lifecycle: in-development\n"})
-		Expect(g).To(BeFalse())
+	It("classifies an Edit that writes in-development", func() {
+		p, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her-5s12.md", WrittenText: "lifecycle: in-development\n"})
+		Expect(t).To(Equal(gate.ToInDevelopment))
+		Expect(p).To(Equal("/repo/.tickets/her-5s12.md"))
 	})
-	It("ignores edits to non-ticket files", func() {
-		_, g := gate.ShouldEvaluate(gate.HookInput{
-			ToolName: "Edit", FilePath: "/repo/main.go",
-			WrittenText: "lifecycle: pending-validation"})
-		Expect(g).To(BeFalse())
+	It("classifies an Edit that writes validated", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her-5s12.md", WrittenText: "lifecycle: validated\n"})
+		Expect(t).To(Equal(gate.ToValidated))
 	})
-	It("gates a Bash sed that writes pending-validation into a ticket", func() {
-		p, g := gate.ShouldEvaluate(gate.HookInput{
-			ToolName: "Bash",
-			Command:  `sed -i '' 's/^lifecycle:.*/lifecycle: pending-validation/' .tickets/her-5s12.md`})
-		Expect(g).To(BeTrue())
+	It("does not confuse pending-validation with validated", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her.md", WrittenText: "lifecycle: pending-validation\n"})
+		Expect(t).To(Equal(gate.ToPendingValidation)) // not ToValidated
+	})
+	It("returns None for a ticket edit with no lifecycle marker", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her.md", WrittenText: "status: open\n"})
+		Expect(t).To(Equal(gate.None))
+	})
+	It("returns None for edits to non-ticket files", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/main.go", WrittenText: "lifecycle: validated"})
+		Expect(t).To(Equal(gate.None))
+	})
+	It("classifies a Bash sed that writes pending-validation", func() {
+		p, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Bash",
+			Command: `sed -i '' 's/^lifecycle:.*/lifecycle: pending-validation/' .tickets/her-5s12.md`})
+		Expect(t).To(Equal(gate.ToPendingValidation))
 		Expect(p).To(Equal(".tickets/her-5s12.md"))
 	})
-	It("does not gate a read-only grep mentioning pending-validation", func() {
-		_, g := gate.ShouldEvaluate(gate.HookInput{
-			ToolName: "Bash", Command: `grep pending-validation .tickets/her-5s12.md`})
-		Expect(g).To(BeFalse())
+	It("returns None for a read-only grep mentioning a marker (no write indicator)", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Bash",
+			Command: `grep "lifecycle: pending-validation" .tickets/her-5s12.md`})
+		Expect(t).To(Equal(gate.None))
+	})
+	It("classifies a full-file Write by the frontmatter line, not a note mention", func() {
+		// frontmatter sets pending-validation; a note in the body mentions a
+		// different lifecycle value — the gate must follow the real line.
+		body := "---\nid: her-x\nlifecycle: pending-validation\n---\n# T\n\n## Notes\nPlan written (lifecycle: validated noted here as prose).\n"
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Write",
+			FilePath: "/repo/.tickets/her-x.md", WrittenText: body})
+		Expect(t).To(Equal(gate.ToPendingValidation)) // not ToValidated from the note
+	})
+	It("returns None for an edit that only mentions a lifecycle value in prose", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her-x.md", WrittenText: "see (lifecycle: validated) above\n"})
+		Expect(t).To(Equal(gate.None))
+	})
+	It("returns None for a bogus suffixed lifecycle value (not a real state)", func() {
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her-x.md", WrittenText: "lifecycle: validated-ish\n"})
+		Expect(t).To(Equal(gate.None))
+	})
+	It("returns None when a frontmatter lifecycle line has trailing prose", func() {
+		// the value must be the whole rest of the line, not a prefix
+		_, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Edit",
+			FilePath: "/repo/.tickets/her-x.md", WrittenText: "lifecycle: validated is the goal\n"})
+		Expect(t).To(Equal(gate.None))
+	})
+	It("classifies a Bash write of validated into a ticket", func() {
+		p, t := gate.ShouldEvaluate(gate.HookInput{ToolName: "Bash",
+			Command: `printf 'lifecycle: validated\n' > .tickets/her-x.md`})
+		Expect(t).To(Equal(gate.ToValidated))
+		Expect(p).To(Equal(".tickets/her-x.md"))
 	})
 })
 
@@ -125,36 +168,131 @@ var _ = Describe("EffortsFromTranscript", func() {
 	})
 })
 
+var _ = Describe("OpenItemCount", func() {
+	It("counts unchecked boxes and ignores checked ones", func() {
+		doc := "- [x] done\n- [ ] todo\n* [ ] another\n+ [X] also done\n"
+		Expect(gate.OpenItemCount(doc)).To(Equal(2))
+	})
+	It("counts indented unchecked boxes", func() {
+		Expect(gate.OpenItemCount("  - [ ] nested\n")).To(Equal(1))
+	})
+	It("ignores checkboxes inside fenced code blocks", func() {
+		doc := "- [ ] real\n```\n- [ ] example in code\n```\n- [x] closed\n"
+		Expect(gate.OpenItemCount(doc)).To(Equal(1))
+	})
+	It("returns zero when every box is checked", func() {
+		Expect(gate.OpenItemCount("- [x] all\n- [X] done\n")).To(Equal(0))
+	})
+	It("returns zero for a doc with no task items", func() {
+		Expect(gate.OpenItemCount("# Title\n\nprose only\n")).To(Equal(0))
+	})
+})
+
 var _ = Describe("Decide", func() {
 	const ticket = "/repo/.tickets/her-5s12.md"
-	gatingInput := gate.HookInput{ToolName: "Edit", FilePath: ticket,
-		WrittenText: "lifecycle: pending-validation\n"}
-	both := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"code-review","args":"medium"}}]}}` + "\n" +
-		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"code-review","args":"high"}}]}}` + "\n"
+	skill := func(args string) string {
+		return `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"code-review","args":"` + args + `"}}]}}`
+	}
+	bothReviews := skill("medium") + "\n" + skill("high") + "\n"
 
-	It("allows a non-gating edit regardless of transcript", func() {
-		d := gate.Decide(gate.HookInput{ToolName: "Edit", FilePath: "/repo/main.go"}, nil)
-		Expect(d.Allow).To(BeTrue())
+	Describe("pending-validation", func() {
+		in := gate.HookInput{ToolName: "Edit", FilePath: ticket, WrittenText: "lifecycle: pending-validation\n"}
+		env := func(tr io.Reader) gate.Env {
+			return gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket, Transcript: tr}
+		}
+		It("allows a non-gating call", func() {
+			Expect(gate.Decide(gate.HookInput{}, gate.Env{Transition: gate.None}).Allow).To(BeTrue())
+		})
+		It("allows when both passes are present", func() {
+			Expect(gate.Decide(in, env(strings.NewReader(bothReviews))).Allow).To(BeTrue())
+		})
+		It("blocks and names the missing pass", func() {
+			d := gate.Decide(in, env(strings.NewReader(skill("medium")+"\n")))
+			Expect(d.Allow).To(BeFalse())
+			Expect(d.Missing).To(Equal([]string{"high"}))
+		})
+		It("fails closed on a nil transcript", func() {
+			Expect(gate.Decide(in, env(nil)).Allow).To(BeFalse())
+		})
+		It("honors the override", func() {
+			ov := in
+			ov.WrittenText += "[skip-code-review-gate] hotfix\n"
+			Expect(gate.Decide(ov, env(nil)).Allow).To(BeTrue())
+		})
 	})
-	It("allows when both passes are present", func() {
-		d := gate.Decide(gatingInput, strings.NewReader(both))
-		Expect(d.Allow).To(BeTrue())
+
+	Describe("validated", func() {
+		in := gate.HookInput{ToolName: "Edit", FilePath: ticket, WrittenText: "lifecycle: validated\n"}
+		base := func() gate.Env {
+			return gate.Env{Transition: gate.ToValidated, TicketPath: ticket,
+				TicketContent: "lifecycle: pending-validation\n", TicketReadOK: true,
+				ValidationFound: true, ValidationDocs: []string{"- [x] done\n"}}
+		}
+		It("allows when pending-validation and every box checked", func() {
+			Expect(gate.Decide(in, base()).Allow).To(BeTrue())
+		})
+		It("blocks when a validation box is open", func() {
+			e := base()
+			e.ValidationDocs = []string{"- [x] auto\n- [ ] human\n"}
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("blocks (monotonic) when the ticket is still in-development", func() {
+			e := base()
+			e.TicketContent = "lifecycle: in-development\n"
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("allows an idempotent re-validation", func() {
+			e := base()
+			e.TicketContent = "lifecycle: validated\n"
+			e.ValidationFound = false // unread: idempotent path must not require a doc
+			Expect(gate.Decide(in, e).Allow).To(BeTrue())
+		})
+		It("fails closed when no validation doc exists", func() {
+			e := base()
+			e.ValidationFound = false
+			e.ValidationDocs = nil
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("fails closed when the ticket is unreadable", func() {
+			e := base()
+			e.TicketReadOK = false
+			e.TicketContent = ""
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("honors the override even when otherwise blocked", func() {
+			ov := in
+			ov.WrittenText += "[skip-validation-gate] signed off offline\n"
+			e := base()
+			e.TicketContent = "lifecycle: in-development\n"
+			Expect(gate.Decide(ov, e).Allow).To(BeTrue())
+		})
 	})
-	It("blocks and names the missing pass", func() {
-		one := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"code-review","args":"medium"}}]}}` + "\n"
-		d := gate.Decide(gatingInput, strings.NewReader(one))
-		Expect(d.Allow).To(BeFalse())
-		Expect(d.Missing).To(Equal([]string{"high"}))
-		Expect(d.Reason).To(ContainSubstring("high"))
-	})
-	It("fails closed when the transcript is unreadable (nil)", func() {
-		d := gate.Decide(gatingInput, nil)
-		Expect(d.Allow).To(BeFalse())
-	})
-	It("allows a gating edit carrying the override marker with a reason", func() {
-		in := gatingInput
-		in.WrittenText += "[skip-code-review-gate] urgent hotfix\n"
-		d := gate.Decide(in, nil)
-		Expect(d.Allow).To(BeTrue())
+
+	Describe("in-development", func() {
+		in := gate.HookInput{ToolName: "Edit", FilePath: ticket, WrittenText: "lifecycle: in-development\n"}
+		It("blocks when no branch/external-ref is present anywhere", func() {
+			e := gate.Env{Transition: gate.ToInDevelopment, TicketPath: ticket, TicketReadOK: true, TicketContent: "id: x\n"}
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("allows when branch: is added in the same edit", func() {
+			ov := in
+			ov.WrittenText += "branch: feat/x\n"
+			e := gate.Env{Transition: gate.ToInDevelopment, TicketPath: ticket, TicketReadOK: true, TicketContent: "id: x\n"}
+			Expect(gate.Decide(ov, e).Allow).To(BeTrue())
+		})
+		It("allows when external-ref is already on the on-disk ticket", func() {
+			e := gate.Env{Transition: gate.ToInDevelopment, TicketPath: ticket, TicketReadOK: true, TicketContent: "external-ref: gh-12\n"}
+			Expect(gate.Decide(in, e).Allow).To(BeTrue())
+		})
+		It("allows when the [skip-branch-linkage] override is present with a reason", func() {
+			ov := in
+			ov.WrittenText += "[skip-branch-linkage] tracked elsewhere\n"
+			e := gate.Env{Transition: gate.ToInDevelopment, TicketPath: ticket, TicketReadOK: true, TicketContent: "id: x\n"}
+			Expect(gate.Decide(ov, e).Allow).To(BeTrue())
+		})
+		It("blocks when the ticket is unreadable and no link is in the edit", func() {
+			e := gate.Env{Transition: gate.ToInDevelopment, TicketPath: ticket, TicketReadOK: false}
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
 	})
 })

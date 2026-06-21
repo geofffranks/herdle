@@ -52,6 +52,8 @@ silently skipped.
 - Create the work branch off the repo's default branch.
 - Record the branch on the ticket (`branch:` frontmatter) and set
   `lifecycle: in-development`.
+  The gatekeeper blocks the `in-development` bump unless `branch:`/`external-ref`
+  is set — record the branch in the same edit or before it.
 
 **Code Review (second-to-last task):**
 
@@ -85,6 +87,10 @@ looking diff does not exempt you — "looks fine" is not a review. Skipping or
 weakening either pass is a defect, not a judgment call.
 </HARD-GATE>
 
+The gatekeeper's other transitions have their own reason-bearing overrides —
+`[skip-branch-linkage] <reason>` (in-development) and `[skip-validation-gate]
+<reason>` (validated) — exceptional escape hatches, not routine.
+
 **Finalize (last task):**
 
 - Set `lifecycle: pending-validation` — **only after the Code Review task is
@@ -92,9 +98,13 @@ weakening either pass is a defect, not a judgment call.
   for this bump.
 - Write the validation doc (`docs/superpowers/validation/...-validation.md`) with
   concrete acceptance steps.
-- Where possible, write a script that exercises as much of the validation doc as
-  it can, run it, and mark off the steps it covers before handing off. If those
-  validations all pass, set `lifecycle: validated`.
+- Structure the validation doc into **automated** and **human** sections. Write a
+  script that exercises as much of the automated section as it can, run it, and
+  check off only the steps it actually covered. **Human-only steps stay `- [ ]`.**
+- Do **not** set `lifecycle: validated` while any box is open. The gatekeeper
+  blocks it (and blocks skipping straight from `in-development`). Leave the ticket
+  at `pending-validation`; the human checks the remaining boxes, then sets
+  `validated`.
 - Fix bugs as needed until the validation script passes.
 - Squash the branch's commits into one.
 - Do **not** open a PR here — opening a PR signals validated work. Leave that to

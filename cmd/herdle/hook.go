@@ -78,13 +78,14 @@ func runGatekeeper(r io.Reader) gate.Decision {
 
 	switch t {
 	case gate.ToPendingValidation:
+		env.TicketContent, env.TicketReadOK = readTicket(abs)
 		if raw.TranscriptPath != "" {
 			if f, err := os.Open(raw.TranscriptPath); err == nil { // #nosec G304 -- path is supplied by Claude Code
 				defer func() { _ = f.Close() }()
 				env.Transcript = f
 			}
 		}
-		return gate.Decide(in, env) // nil Transcript → fail closed
+		return gate.Decide(in, env) // nil Transcript → fail closed (unless rollback)
 	case gate.ToValidated:
 		env.TicketContent, env.TicketReadOK = readTicket(abs)
 		env.ValidationDocs, env.ValidationFound = readValidationDocs(abs)

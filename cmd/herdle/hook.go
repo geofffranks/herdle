@@ -78,6 +78,9 @@ func runGatekeeper(r io.Reader) gate.Decision {
 
 	switch t {
 	case gate.ToPendingValidation:
+		// The on-disk lifecycle lets decidePending detect a backward rollback
+		// (validated/pending-validation → pending-validation), which skips the
+		// transcript check; a forward bump still needs the transcript below.
 		env.TicketContent, env.TicketReadOK = readTicket(abs)
 		if raw.TranscriptPath != "" {
 			if f, err := os.Open(raw.TranscriptPath); err == nil { // #nosec G304 -- path is supplied by Claude Code

@@ -234,8 +234,11 @@ var _ = Describe("Decide", func() {
 			e.Transcript = strings.NewReader(skill("medium") + "\n") // only one pass
 			Expect(gate.Decide(in, e).Allow).To(BeFalse())
 		})
-		It("falls through to the transcript gate when the ticket is unreadable", func() {
-			Expect(gate.Decide(in, env(nil)).Allow).To(BeFalse()) // TicketReadOK false → fail closed
+		It("still fails closed for a readable non-rollback ticket with no transcript", func() {
+			// readable on-disk in-development (not a rollback state) + nil transcript:
+			// the short-circuit must miss and the fail-closed forward gate must fire.
+			// Distinct from the unreadable-ticket "fails closed on a nil transcript" case.
+			Expect(gate.Decide(in, envDisk("in-development")).Allow).To(BeFalse())
 		})
 	})
 

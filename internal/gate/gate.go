@@ -68,13 +68,31 @@ func editedText(in HookInput) string {
 	return in.WrittenText
 }
 
-// currentLifecycle returns the lifecycle value in a ticket's frontmatter, or ""
-// when absent.
+// currentLifecycle returns the lifecycle value from a ticket's YAML frontmatter
+// (the block before the first closing "---"), or "" when absent. Bounding the
+// scan to the frontmatter keeps a stray body line such as "lifecycle: validated"
+// (a quote, a changelog note) from being read as the ticket's real state — which
+// would let a forward bump masquerade as a rollback and skip the code-review gate.
 func currentLifecycle(ticket string) string {
-	if m := lifecycleRE.FindStringSubmatch(ticket); m != nil {
+	if m := lifecycleRE.FindStringSubmatch(frontmatter(ticket)); m != nil {
 		return m[1]
 	}
 	return ""
+}
+
+// frontmatter returns a ticket's YAML frontmatter — the text between the opening
+// "---" line and the next "---" line. Content that does not open with "---" (the
+// bare "lifecycle: x" form used in unit fixtures) is treated as all-frontmatter,
+// as is an unterminated block.
+func frontmatter(ticket string) string {
+	if !strings.HasPrefix(ticket, "---\n") {
+		return ticket
+	}
+	rest := ticket[len("---\n"):]
+	if i := strings.Index(rest, "\n---"); i >= 0 {
+		return rest[:i]
+	}
+	return rest
 }
 
 // hasLink reports whether text carries a non-empty branch:/external-ref: field.

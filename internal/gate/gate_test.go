@@ -234,6 +234,20 @@ var _ = Describe("Decide", func() {
 			e.Transcript = strings.NewReader(skill("medium") + "\n") // only one pass
 			Expect(gate.Decide(in, e).Allow).To(BeFalse())
 		})
+		It("does not treat a body line as the on-disk state (no rollback short-circuit)", func() {
+			// Fenced frontmatter has NO lifecycle field; a stray body line reads
+			// "lifecycle: validated". currentLifecycle must ignore the body, so the
+			// forward bump is still gated (fail closed on the nil transcript) rather
+			// than wrongly short-circuited as a rollback.
+			e := gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket, TicketReadOK: true,
+				TicketContent: "---\nid: x\n---\nnotes\nlifecycle: validated\n"}
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("honors the override ahead of the rollback short-circuit", func() {
+			ov := in
+			ov.WrittenText += "[skip-code-review-gate] reopened\n"
+			Expect(gate.Decide(ov, envDisk("in-development")).Allow).To(BeTrue())
+		})
 		It("still fails closed for a readable non-rollback ticket with no transcript", func() {
 			// readable on-disk in-development (not a rollback state) + nil transcript:
 			// the short-circuit must miss and the fail-closed forward gate must fire.

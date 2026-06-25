@@ -63,16 +63,60 @@ func ticketMatchesPR(t dticket, n, prNum, prHead string) bool {
 	return (n != "" && n == prNum) || branchHasNum(prHead, n) || (t.Branch != "" && t.Branch == prHead)
 }
 
-// tksForPR mirrors wip's tks_for_pr: ids of tickets correlated to a PR.
-func tksForPR(tickets []dticket, prNum int, prHead string) []string {
+// dticketsForPR returns the tickets correlated to a PR, carrying their effective
+// lifecycle. tksForPR is the id-only projection of this.
+func dticketsForPR(tickets []dticket, prNum int, prHead string) []dticket {
 	num := strconv.Itoa(prNum)
-	var out []string
+	var out []dticket
 	for _, t := range tickets {
 		if ticketMatchesPR(t, ghNum(t.ExternalRef), num, prHead) {
-			out = append(out, t.ID)
+			out = append(out, t)
 		}
 	}
 	return out
+}
+
+// tksForPR mirrors wip's tks_for_pr: ids of tickets correlated to a PR.
+func tksForPR(tickets []dticket, prNum int, prHead string) []string {
+	corr := dticketsForPR(tickets, prNum, prHead)
+	if len(corr) == 0 {
+		return nil // preserve the nil (not []string{}) the suite asserts on
+	}
+	out := make([]string, 0, len(corr))
+	for _, t := range corr {
+		out = append(out, t.ID)
+	}
+	return out
+}
+
+// prTKIssue reports whether an open PR's tk correlation fails to resolve to a
+// validated ticket, plus the human text describing why. text/false when every
+// correlated ticket is validated. A PR with no correlated ticket is only an
+// issue when the table is non-empty: an empty table means this repo has no tk
+// system, so a PR without a ticket is not a validation gap to surface.
+func prTKIssue(tickets []dticket, prNum int, prHead string) (string, bool) {
+	corr := dticketsForPR(tickets, prNum, prHead)
+	if len(corr) == 0 {
+		if len(tickets) > 0 { // repo uses tk, this PR is uncorrelated
+			return "no tk", true
+		}
+		return "", false
+	}
+	var frags []string
+	for _, t := range corr {
+		switch t.EffLifecycle {
+		case "validated":
+			// resolved — contributes no fragment
+		case "?", "-", "": // "" never occurs from ticketTable; guarded for synthetic fixtures
+			frags = append(frags, "tk "+t.ID+" unvalidated ("+t.EffLifecycle+")")
+		default:
+			frags = append(frags, "tk "+t.ID+" "+t.EffLifecycle)
+		}
+	}
+	if len(frags) == 0 {
+		return "", false
+	}
+	return strings.Join(frags, ", "), true
 }
 
 // tkForBranch mirrors wip's WIP inner loop: the first ticket whose explicit

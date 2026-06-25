@@ -85,6 +85,7 @@ var _ = Describe("Engine PR sections", func() {
 			{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"},
 		}
 		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t1", ExternalRef: "gh-5"}})
+		tickets[0] = eng.WithLifecycleForTest(tickets[0], "validated") // validated -> no tk flag, asserts the baseline note set
 		rows := eng.OpenPRRowsForTest(prs, tickets, "/r", "origin")
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Number).To(Equal(5))
@@ -149,6 +150,33 @@ var _ = Describe("Engine PR sections", func() {
 		rows := eng.MergedCleanupRowsForTest(prs, nil, "/r", "fork")
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Flags.Text).To(Equal("⚠ fork branch"))
+	})
+
+	It("appends a yellow tk flag when a correlated ticket is not validated", func() {
+		prs := []vcs.PR{{Number: 5, State: "OPEN", HeadRefName: "feat", Title: "x", Mergeable: "MERGEABLE"}}
+		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t1", ExternalRef: "gh-5"}})
+		tickets[0] = eng.WithLifecycleForTest(tickets[0], "pending-validation")
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		git.DivergenceReturns(0, 0, nil) // in sync -> green sync note dropped
+		rows := eng.OpenPRRowsForTest(prs, tickets, "/r", "origin")
+		Expect(rows[0].Notes).To(Equal([]dashboard.FlagNote{
+			{Text: "✓ ready to merge", Sev: dashboard.SevGreen},
+			{Text: "⚠ tk t1 pending-validation", Sev: dashboard.SevYellow},
+		}))
+	})
+
+	It("adds no tk flag when the correlated ticket is validated", func() {
+		prs := []vcs.PR{{Number: 5, State: "OPEN", HeadRefName: "feat", Title: "x", Mergeable: "MERGEABLE"}}
+		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t1", ExternalRef: "gh-5"}})
+		tickets[0] = eng.WithLifecycleForTest(tickets[0], "validated")
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		git.DivergenceReturns(0, 0, nil)
+		rows := eng.OpenPRRowsForTest(prs, tickets, "/r", "origin")
+		Expect(rows[0].Notes).To(Equal([]dashboard.FlagNote{
+			{Text: "✓ ready to merge", Sev: dashboard.SevGreen},
+		}))
 	})
 })
 

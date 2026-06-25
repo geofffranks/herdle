@@ -65,11 +65,20 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 				absent[forgeCLI(kind)] = true
 				mu.Unlock()
 			}
+			// Fetch the ticket table once per project and feed both cells: prCell
+			// needs it for the tk-validation reclassification, tkCell for its
+			// in-progress/ready counts. Gated on HasTickets so a repo without a
+			// .tickets dir spawns no `tk query` at all.
+			present, _ := e.TK.HasTickets(p.Path)
+			var tickets []dticket
+			if present {
+				tickets = e.ticketTable(p.Path)
+			}
 			rows[i] = SummaryRow{
 				Name: r.Name,
 				Head: e.head(p.Path),
-				PR:   e.prCell(client, slug, isForge && avail),
-				TK:   e.tkCell(p.Path),
+				PR:   e.prCell(client, slug, isForge && avail, tickets),
+				TK:   e.tkCell(p.Path, present, tickets),
 			}
 		}(i, p)
 	}
@@ -105,7 +114,7 @@ func (e Engine) head(path string) HeadInfo {
 // PRNoSlug ("-") and the forge is not called. A forge project whose list call
 // fails is PRUnknown ("?"). query is true only when a forge client is available
 // and a slug resolved.
-func (e Engine) prCell(client forgeClient, slug string, query bool) PRCell {
+func (e Engine) prCell(client forgeClient, slug string, query bool, tickets []dticket) PRCell {
 	if !query || client == nil || slug == "" {
 		return PRCell{State: PRNoSlug}
 	}
@@ -117,7 +126,11 @@ func (e Engine) prCell(client forgeClient, slug string, query bool) PRCell {
 	for _, pr := range prs {
 		switch classifyMerge(pr) {
 		case MergeReady:
-			cell.Ready++
+			if _, bad := prTKIssue(tickets, pr.Number, pr.HeadRefName); bad {
+				cell.Attention++ // forge says mergeable, but tk is not validated
+			} else {
+				cell.Ready++
+			}
 		case MergeConflicts, MergeChecksFailing, MergeChangesRequested, MergeBlocked:
 			cell.Attention++
 		}
@@ -128,17 +141,15 @@ func (e Engine) prCell(client forgeClient, slug string, query bool) PRCell {
 // tkCell mirrors wip's `tk ls --status=in_progress | grep -c .` and
 // `tk ready | grep -c '\[open\]'`: in-progress count, plus ready tickets that are
 // also open (cross-referenced against Tickets' statuses).
-func (e Engine) tkCell(path string) TKCell {
-	present, err := e.TK.HasTickets(path)
-	// Mirror wip's `[ -d "$path/.tickets" ]`: any stat error is treated as absent.
-	if err != nil || !present {
+// tkCell takes the already-fetched present flag and ticket table (built once per
+// project in Summary) to avoid a second `tk query` per project. Closed tickets
+// are filtered out of ticketTable, but tkCell never counted them anyway (only
+// in_progress and open statuses), so the counts are unchanged.
+func (e Engine) tkCell(path string, present bool, tickets []dticket) TKCell {
+	if !present {
 		return TKCell{Present: false}
 	}
 	cell := TKCell{Present: true}
-	tickets, err := e.TK.Tickets(path)
-	if err != nil {
-		return cell // dir exists but tk failed -> 0/0
-	}
 	open := make(map[string]bool)
 	for _, t := range tickets {
 		switch t.Status {

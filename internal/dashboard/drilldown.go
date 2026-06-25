@@ -165,6 +165,9 @@ func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path, remote string)
 		if sync := e.syncNote(path, remote, pr.HeadRefName); sync.Sev != SevGreen {
 			notes = append(notes, sync)
 		}
+		if text, bad := prTKIssue(tickets, pr.Number, pr.HeadRefName); bad {
+			notes = append(notes, FlagNote{Text: "⚠ " + text, Sev: SevYellow})
+		}
 		rows = append(rows, PRRow{
 			Number: pr.Number,
 			Head:   pr.HeadRefName,

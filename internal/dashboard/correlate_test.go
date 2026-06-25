@@ -34,6 +34,7 @@ var _ = Describe("correlation helpers", func() {
 	dt := func(id, ref, branch string) dticket {
 		return dticket{Ticket: vcs.Ticket{ID: id, ExternalRef: ref, Branch: branch}}
 	}
+	mustText := func(text string, _ bool) string { return text }
 
 	Describe("tksForPR", func() {
 		// a: ghNum==12. c: explicit branch == prHead. b: its branch carries "12" but
@@ -66,6 +67,49 @@ var _ = Describe("correlation helpers", func() {
 		It("reports no match", func() {
 			_, ok := tkForBranch(tickets, "none")
 			Expect(ok).To(BeFalse())
+		})
+	})
+
+	Describe("prTKIssue", func() {
+		dl := func(id, ref, lc string) dticket {
+			return dticket{Ticket: vcs.Ticket{ID: id, ExternalRef: ref}, EffLifecycle: lc}
+		}
+		It("is silent when the repo has no tk and the PR has no ticket", func() {
+			text, bad := prTKIssue(nil, 5, "feat")
+			Expect(bad).To(BeFalse())
+			Expect(text).To(Equal(""))
+		})
+		It("flags 'no tk' when the repo uses tk but the PR has none", func() {
+			tickets := []dticket{dl("a", "gh-99", "validated")} // unrelated to PR 5
+			text, bad := prTKIssue(tickets, 5, "feat")
+			Expect(bad).To(BeTrue())
+			Expect(text).To(Equal("no tk"))
+		})
+		It("is silent when the only correlated ticket is validated", func() {
+			tickets := []dticket{dl("a", "gh-5", "validated")}
+			_, bad := prTKIssue(tickets, 5, "feat")
+			Expect(bad).To(BeFalse())
+		})
+		It("names a real non-validated state", func() {
+			tickets := []dticket{dl("a", "gh-5", "pending-validation")}
+			text, bad := prTKIssue(tickets, 5, "feat")
+			Expect(bad).To(BeTrue())
+			Expect(text).To(Equal("tk a pending-validation"))
+		})
+		It("renders ? and - as unvalidated(<lc>)", func() {
+			Expect(mustText(prTKIssue([]dticket{dl("a", "gh-5", "?")}, 5, "feat"))).To(Equal("tk a unvalidated (?)"))
+			Expect(mustText(prTKIssue([]dticket{dl("a", "gh-5", "-")}, 5, "feat"))).To(Equal("tk a unvalidated (-)"))
+		})
+		It("lists only the non-validated tickets when several correlate", func() {
+			tickets := []dticket{dl("a", "gh-5", "validated"), dl("b", "gh-5", "in-development")}
+			text, bad := prTKIssue(tickets, 5, "feat")
+			Expect(bad).To(BeTrue())
+			Expect(text).To(Equal("tk b in-development"))
+		})
+		It("joins multiple non-validated tickets with a comma", func() {
+			tickets := []dticket{dl("a", "gh-5", "pending-validation"), dl("b", "gh-5", "?")}
+			text, _ := prTKIssue(tickets, 5, "feat")
+			Expect(text).To(Equal("tk a pending-validation, tk b unvalidated (?)"))
 		})
 	})
 

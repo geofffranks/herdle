@@ -103,6 +103,32 @@ var _ = Describe("Engine.Summary", func() {
 			Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRUnknown))
 		})
 
+		It("counts a ready PR as attention when its tk is not validated", func() {
+			gh.PRListReturns([]vcs.PR{
+				{Number: 1, State: "OPEN", Mergeable: "MERGEABLE"}, // would be ready
+			}, nil)
+			git.RemoteURLReturns("git@github.com:o/r.git", nil)
+			tk.HasTicketsReturns(true, nil)
+			tk.TicketsReturns([]vcs.Ticket{
+				{ID: "a", Status: "open", ExternalRef: "gh-1", Lifecycle: "pending-validation"},
+			}, nil)
+			cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
+			res, _ := eng.Summary(cfg, false)
+			Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 1, Attention: 1}))
+		})
+
+		It("still counts a ready PR as ready when its tk is validated", func() {
+			gh.PRListReturns([]vcs.PR{{Number: 1, State: "OPEN", Mergeable: "MERGEABLE"}}, nil)
+			git.RemoteURLReturns("git@github.com:o/r.git", nil)
+			tk.HasTicketsReturns(true, nil)
+			tk.TicketsReturns([]vcs.Ticket{
+				{ID: "a", Status: "open", ExternalRef: "gh-1", Lifecycle: "validated"},
+			}, nil)
+			cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
+			res, _ := eng.Summary(cfg, false)
+			Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 1, Ready: 1}))
+		})
+
 		It("counts ready and needs-attention open PRs (neutral uncounted)", func() {
 			gh.PRListReturns([]vcs.PR{
 				{Number: 1, State: "OPEN", Mergeable: "MERGEABLE"},                                      // ready

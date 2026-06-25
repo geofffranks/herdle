@@ -59,6 +59,33 @@ var _ = Describe("runGatekeeper", func() {
 		It("allows on malformed stdin (fail-open on envelope parse)", func() {
 			Expect(runGatekeeper(strings.NewReader("not json")).Allow).To(BeTrue())
 		})
+
+		writeRepoTicket := func(lifecycle string) (repo, ticket string) {
+			repo = GinkgoT().TempDir()
+			Expect(os.MkdirAll(filepath.Join(repo, ".tickets"), 0o750)).To(Succeed())
+			ticket = filepath.Join(repo, ".tickets", "her-tolc.md")
+			Expect(os.WriteFile(ticket, []byte("---\nid: her-tolc\nlifecycle: "+lifecycle+"\n---\n"), 0o600)).To(Succeed())
+			return repo, ticket
+		}
+		// stdinNoTranscript builds a pending-validation Edit with a cwd (so the
+		// on-disk ticket resolves) but no transcript — a rollback must allow anyway.
+		stdinNoTranscript := func(repo, ticket string) io.Reader {
+			ns, _ := json.Marshal("lifecycle: pending-validation\n")
+			ti := `{"file_path":"` + ticket + `","new_string":` + string(ns) + `}`
+			return strings.NewReader(`{"tool_name":"Edit","tool_input":` + ti + `,"cwd":"` + repo + `"}`)
+		}
+		It("allows a rollback from validated with no transcript", func() {
+			repo, ticket := writeRepoTicket("validated")
+			Expect(runGatekeeper(stdinNoTranscript(repo, ticket)).Allow).To(BeTrue())
+		})
+		It("still blocks a forward bump from in-development missing a pass", func() {
+			repo, ticket := writeRepoTicket("in-development")
+			tp := writeTranscript(skill("medium")) // only one pass
+			ns, _ := json.Marshal("lifecycle: pending-validation\n")
+			ti := `{"file_path":"` + ticket + `","new_string":` + string(ns) + `}`
+			in := strings.NewReader(`{"tool_name":"Edit","tool_input":` + ti + `,"cwd":"` + repo + `","transcript_path":"` + tp + `"}`)
+			Expect(runGatekeeper(in).Allow).To(BeFalse())
+		})
 	})
 
 	Describe("validated", func() {

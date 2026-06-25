@@ -219,6 +219,41 @@ var _ = Describe("Decide", func() {
 			ov.WrittenText += "[skip-code-review-gate] hotfix\n"
 			Expect(gate.Decide(ov, env(nil)).Allow).To(BeTrue())
 		})
+		envDisk := func(lifecycle string) gate.Env {
+			return gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket,
+				TicketContent: "lifecycle: " + lifecycle + "\n", TicketReadOK: true}
+		}
+		It("allows a backward rollback from validated without a transcript", func() {
+			Expect(gate.Decide(in, envDisk("validated")).Allow).To(BeTrue())
+		})
+		It("allows an idempotent re-write at pending-validation", func() {
+			Expect(gate.Decide(in, envDisk("pending-validation")).Allow).To(BeTrue())
+		})
+		It("still gates a forward bump from in-development (no rollback)", func() {
+			e := envDisk("in-development")
+			e.Transcript = strings.NewReader(skill("medium") + "\n") // only one pass
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("does not treat a body line as the on-disk state (no rollback short-circuit)", func() {
+			// Fenced frontmatter has NO lifecycle field; a stray body line reads
+			// "lifecycle: validated". currentLifecycle must ignore the body, so the
+			// forward bump is still gated (fail closed on the nil transcript) rather
+			// than wrongly short-circuited as a rollback.
+			e := gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket, TicketReadOK: true,
+				TicketContent: "---\nid: x\n---\nnotes\nlifecycle: validated\n"}
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("honors the override ahead of the rollback short-circuit", func() {
+			ov := in
+			ov.WrittenText += "[skip-code-review-gate] reopened\n"
+			Expect(gate.Decide(ov, envDisk("in-development")).Allow).To(BeTrue())
+		})
+		It("still fails closed for a readable non-rollback ticket with no transcript", func() {
+			// readable on-disk in-development (not a rollback state) + nil transcript:
+			// the short-circuit must miss and the fail-closed forward gate must fire.
+			// Distinct from the unreadable-ticket "fails closed on a nil transcript" case.
+			Expect(gate.Decide(in, envDisk("in-development")).Allow).To(BeFalse())
+		})
 	})
 
 	Describe("validated", func() {

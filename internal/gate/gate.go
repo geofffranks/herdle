@@ -350,6 +350,17 @@ func decidePending(in HookInput, env Env) Decision {
 	if HasOverride(editedText(in)) {
 		return Decision{Allow: true}
 	}
+	// A backward rollback (validated → pending-validation, e.g. a reviewer
+	// reopens an approved ticket) or an idempotent re-write changes no code, so
+	// the /code-review passes that gated the original forward bump need not be
+	// re-run. Confirm the prior state from the on-disk ticket; an unreadable
+	// ticket falls through to the fail-closed forward check below.
+	if env.TicketReadOK {
+		switch currentLifecycle(env.TicketContent) {
+		case "validated", "pending-validation":
+			return Decision{Allow: true}
+		}
+	}
 	if env.Transcript == nil {
 		return Decision{Allow: false, Missing: []string{"medium", "high"}, Reason: failClosedReason}
 	}

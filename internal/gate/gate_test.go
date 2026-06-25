@@ -219,6 +219,24 @@ var _ = Describe("Decide", func() {
 			ov.WrittenText += "[skip-code-review-gate] hotfix\n"
 			Expect(gate.Decide(ov, env(nil)).Allow).To(BeTrue())
 		})
+		envDisk := func(lifecycle string) gate.Env {
+			return gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket,
+				TicketContent: "lifecycle: " + lifecycle + "\n", TicketReadOK: true}
+		}
+		It("allows a backward rollback from validated without a transcript", func() {
+			Expect(gate.Decide(in, envDisk("validated")).Allow).To(BeTrue())
+		})
+		It("allows an idempotent re-write at pending-validation", func() {
+			Expect(gate.Decide(in, envDisk("pending-validation")).Allow).To(BeTrue())
+		})
+		It("still gates a forward bump from in-development (no rollback)", func() {
+			e := envDisk("in-development")
+			e.Transcript = strings.NewReader(skill("medium") + "\n") // only one pass
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("falls through to the transcript gate when the ticket is unreadable", func() {
+			Expect(gate.Decide(in, env(nil)).Allow).To(BeFalse()) // TicketReadOK false → fail closed
+		})
 	})
 
 	Describe("validated", func() {

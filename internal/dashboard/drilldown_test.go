@@ -113,7 +113,7 @@ var _ = Describe("Engine PR sections", func() {
 		git.RemoteBranchExistsReturns(true, nil) // origin branch lingers
 		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"}}
 		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t6", ExternalRef: "gh-6"}})
-		rows := eng.MergedCleanupRowsForTest(prs, tickets, "/r", "origin")
+		rows := eng.MergedCleanupRowsForTest(prs, tickets, config.Resolved{Path: "/r", Remote: "origin"})
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Flags).To(Equal(dashboard.FlagNote{
 			Text: "⚠ local branch · ⚠ origin branch · ⚠ tk t6 open", Sev: dashboard.SevYellow,
@@ -122,7 +122,21 @@ var _ = Describe("Engine PR sections", func() {
 
 	It("drops merged PRs with no leftovers", func() {
 		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old"}}
-		Expect(eng.MergedCleanupRowsForTest(prs, nil, "/r", "origin")).To(BeEmpty())
+		Expect(eng.MergedCleanupRowsForTest(prs, nil, config.Resolved{Path: "/r", Remote: "origin"})).To(BeEmpty())
+	})
+
+	It("drops merged PRs whose head is a trunk/base/integration branch", func() {
+		// Fork PRs opened from main->main (or base/integration) carry a trunk
+		// HeadRefName. That branch is never cleaned up and its tk may belong to
+		// ongoing work (a still-open PR off the same branch), so it is not cleanup.
+		git.LocalBranchExistsReturns(true, nil)  // trunk always exists locally
+		git.RemoteBranchExistsReturns(true, nil) // and on the remote
+		tickets := eng.TicketsForTest([]vcs.Ticket{{ID: "t6", ExternalRef: "gh-6"}})
+		for _, head := range []string{"main", "master", "dev", "geoff-main", "origin"} {
+			prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: head, Title: "done"}}
+			r := config.Resolved{Path: "/r", Remote: "origin", Base: "dev", Integration: "geoff-main"}
+			Expect(eng.MergedCleanupRowsForTest(prs, tickets, r)).To(BeEmpty(), "head %q should be excluded", head)
+		}
 	})
 
 	It("threads the configured remote into the open-PR sync check", func() {
@@ -137,7 +151,7 @@ var _ = Describe("Engine PR sections", func() {
 		git.LocalBranchExistsReturns(true, nil)
 		git.RemoteBranchExistsReturns(true, nil)
 		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"}}
-		rows := eng.MergedCleanupRowsForTest(prs, nil, "/r", "")
+		rows := eng.MergedCleanupRowsForTest(prs, nil, config.Resolved{Path: "/r"})
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Flags.Text).To(Equal("⚠ local branch")) // no remote-branch flag
 		Expect(git.RemoteBranchExistsCallCount()).To(Equal(0))
@@ -147,7 +161,7 @@ var _ = Describe("Engine PR sections", func() {
 		git.LocalBranchExistsReturns(false, nil)
 		git.RemoteBranchExistsReturns(true, nil)
 		prs := []vcs.PR{{Number: 6, State: "MERGED", HeadRefName: "old", Title: "done"}}
-		rows := eng.MergedCleanupRowsForTest(prs, nil, "/r", "fork")
+		rows := eng.MergedCleanupRowsForTest(prs, nil, config.Resolved{Path: "/r", Remote: "fork"})
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0].Flags.Text).To(Equal("⚠ fork branch"))
 	})

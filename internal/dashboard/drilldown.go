@@ -226,10 +226,16 @@ func (e Engine) openPRRows(prs []vcs.PR, tickets []dticket, path, remote string)
 	return rows
 }
 
-func (e Engine) mergedCleanupRows(prs []vcs.PR, tickets []dticket, path, remote string) []MergedRow {
+func (e Engine) mergedCleanupRows(prs []vcs.PR, tickets []dticket, r config.Resolved) []MergedRow {
+	path, remote := r.Path, r.Remote
+	// Fork PRs opened from a trunk/base/integration branch (main->main, dev->dev)
+	// carry that branch as HeadRefName. Such a branch is never deleted and its tk
+	// may belong to ongoing work off the same branch, so there is nothing to clean
+	// up. Excluded via the same set the WIP section already filters trunks with.
+	excluded := e.excludedBranches(r)
 	var rows []MergedRow
 	for _, pr := range prs {
-		if pr.State != "MERGED" {
+		if pr.State != "MERGED" || excluded[pr.HeadRefName] {
 			continue
 		}
 		var flags []string
@@ -479,7 +485,7 @@ func (e Engine) Drilldown(r config.Resolved, fetch bool) (Drilldown, error) {
 	tickets := e.ticketTable(r.Path)
 
 	d.OpenPRs = e.openPRRows(prs, tickets, r.Path, r.Remote)
-	d.MergedCleanup = e.mergedCleanupRows(prs, tickets, r.Path, r.Remote)
+	d.MergedCleanup = e.mergedCleanupRows(prs, tickets, r)
 
 	// Open forge issues — only for source-of-truth repos routed to an available forge.
 	if isForge && avail && r.TrackIssues {

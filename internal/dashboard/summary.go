@@ -126,7 +126,7 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 // It reuses the drilldown row builders so the summary count equals the drilldown
 // by construction. prs is the "all"-state list shared with prCell.
 func (e Engine) problemCount(r config.Resolved, prs []vcs.PR, tickets []dticket) int {
-	n := len(e.mergedCleanupRows(prs, tickets, r.Path, r.Remote))
+	n := len(e.mergedCleanupRows(prs, tickets, r))
 	for _, w := range e.wipRows(r, prs, tickets) {
 		if w.Problem != "" {
 			n++

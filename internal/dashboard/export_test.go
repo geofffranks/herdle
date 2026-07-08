@@ -27,8 +27,8 @@ func (e Engine) TicketsForTest(ts []vcs.Ticket) []dticket {
 func (e Engine) OpenPRRowsForTest(prs []vcs.PR, t []dticket, path, remote string) []PRRow {
 	return e.openPRRows(prs, t, path, remote)
 }
-func (e Engine) MergedCleanupRowsForTest(prs []vcs.PR, t []dticket, path, remote string) []MergedRow {
-	return e.mergedCleanupRows(prs, t, path, remote)
+func (e Engine) MergedCleanupRowsForTest(prs []vcs.PR, t []dticket, r config.Resolved) []MergedRow {
+	return e.mergedCleanupRows(prs, t, r)
 }
 
 func (e Engine) WIPRowsForTest(r config.Resolved, prs []vcs.PR, t []dticket) []WIPRow {

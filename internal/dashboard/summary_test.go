@@ -84,15 +84,15 @@ var _ = Describe("Engine.Summary", func() {
 			Expect(gh.PRListCallCount()).To(Equal(0))
 		})
 
-		It("is Counted with len(prs) and queries the open state", func() {
-			gh.PRListReturns([]vcs.PR{{Number: 1}, {Number: 2}}, nil)
+		It("is Counted with len(open prs) and queries the all state", func() {
+			gh.PRListReturns([]vcs.PR{{Number: 1, State: "OPEN"}, {Number: 2, State: "OPEN"}}, nil)
 			git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
 			cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
 			res, _ := eng.Summary(cfg, false)
 			Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 2}))
 			slug, state := gh.PRListArgsForCall(0)
 			Expect(slug).To(Equal("o/r"))
-			Expect(state).To(Equal("open"))
+			Expect(state).To(Equal("all"))
 		})
 
 		It("is Unknown when gh fails", func() {
@@ -202,6 +202,107 @@ var _ = Describe("Engine.Summary", func() {
 	})
 })
 
+var _ = Describe("Engine.ProblemCount", func() {
+	var (
+		git      *vcsfakes.FakeGitRunner
+		eng      dashboard.Engine
+		resolved config.Resolved
+	)
+
+	BeforeEach(func() {
+		git = &vcsfakes.FakeGitRunner{}
+		eng = dashboard.Engine{Git: git}
+		resolved = config.Resolved{Path: "/r", Remote: "origin"}
+	})
+
+	It("counts cleanup + WIP problems + open-PR non-merge notes, excluding merge attention", func() {
+		// 1 merged branch still present locally (cleanup), 1 local-only WIP branch
+		// (no tk + not pushed), 1 open PR mergeable but branch unpushed (non-merge sync note).
+		git.LocalBranchesReturns([]vcs.Branch{{Name: "wip/thing"}}, nil)
+		git.RemoteBranchesReturns([]string{}, nil)
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(false, nil)
+		allPRs := []vcs.PR{
+			{Number: 1, State: "MERGED", HeadRefName: "feat/old"},
+			{Number: 2, State: "OPEN", HeadRefName: "feat/new", Mergeable: "MERGEABLE"},
+		}
+		n := eng.ProblemCountForTest(resolved, allPRs, nil)
+		Expect(n).To(Equal(3))
+	})
+
+	It("does not count a conflicting PR whose only problem is merge status", func() {
+		// one open PR, Mergeable CONFLICTING, branch in sync, no tk issue
+		git.LocalBranchesReturns(nil, nil)
+		git.RemoteBranchesReturns(nil, nil)
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		git.DivergenceReturns(0, 0, nil)
+		conflictingInSyncPR := vcs.PR{Number: 3, State: "OPEN", HeadRefName: "feat/conflict", Mergeable: "CONFLICTING"}
+		n := eng.ProblemCountForTest(resolved, []vcs.PR{conflictingInSyncPR}, nil)
+		Expect(n).To(Equal(0)) // merge attention lives in the merge column, not problems
+	})
+
+	It("counts an open PR whose only non-merge note is a tk-validation issue (SevYellow)", func() {
+		// Branch is in sync so syncNote is SevGreen and NOT appended; prTKIssue
+		// returns bad=true (EffLifecycle blank → unvalidated), producing a SevYellow
+		// tk-validation note at Notes[1]. problemCount must count it.
+		git.LocalBranchesReturns(nil, nil)
+		git.RemoteBranchesReturns(nil, nil)
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(true, nil)
+		git.DivergenceReturns(0, 0, nil)
+		allPRs := []vcs.PR{
+			{Number: 1, State: "OPEN", HeadRefName: "feat/needs-validation", Mergeable: "MERGEABLE"},
+		}
+		// TicketsForTest sets EffLifecycle=""; correlates to PR #1 via ExternalRef "gh-1"
+		// → prTKIssue bad=true ("tk a unvalidated ()") → SevYellow note at Notes[1]
+		tickets := eng.TicketsForTest([]vcs.Ticket{
+			{ID: "a", Status: "in_progress", ExternalRef: "gh-1"},
+		})
+		n := eng.ProblemCountForTest(resolved, allPRs, tickets)
+		Expect(n).To(Equal(1))
+	})
+
+	It("does not count an open PR whose sync note is SevNone (branch not checked out locally)", func() {
+		// Branch does NOT exist locally -> syncNote returns SevNone "origin only".
+		// openPRRows appends it, but problemCount must NOT count it as a problem.
+		git.LocalBranchesReturns(nil, nil)
+		git.RemoteBranchesReturns(nil, nil)
+		git.LocalBranchExistsReturns(false, nil) // branch not checked out locally
+		remotePR := vcs.PR{Number: 4, State: "OPEN", HeadRefName: "feat/remote-only", Mergeable: "MERGEABLE"}
+		n := eng.ProblemCountForTest(resolved, []vcs.PR{remotePR}, nil)
+		Expect(n).To(Equal(0)) // SevNone "origin only" is informational, not a problem
+	})
+})
+
+var _ = Describe("Engine.prCell", func() {
+	var eng dashboard.Engine
+
+	BeforeEach(func() {
+		eng = dashboard.Engine{}
+	})
+
+	It("passes PRNoSlug straight through with empty list", func() {
+		cell := eng.PrCellForTest(dashboard.PRNoSlug, nil, nil)
+		Expect(cell).To(Equal(dashboard.PRCell{State: dashboard.PRNoSlug}))
+	})
+
+	It("passes PRUnknown straight through", func() {
+		cell := eng.PrCellForTest(dashboard.PRUnknown, nil, nil)
+		Expect(cell).To(Equal(dashboard.PRCell{State: dashboard.PRUnknown}))
+	})
+
+	It("counts only OPEN PRs from a mixed all-state list", func() {
+		prs := []vcs.PR{
+			{Number: 1, State: "OPEN", Mergeable: "MERGEABLE"},   // ready
+			{Number: 2, State: "OPEN", Mergeable: "CONFLICTING"}, // attention
+			{Number: 3, State: "MERGED", HeadRefName: "old"},     // ignored by prCell
+		}
+		cell := eng.PrCellForTest(dashboard.PRCounted, prs, nil)
+		Expect(cell).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 2, Attention: 1, Ready: 1}))
+	})
+})
+
 var _ = Describe("Engine.Summary — graceful degradation", func() {
 	var (
 		git *vcsfakes.FakeGitRunner
@@ -254,7 +355,7 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 	It("a GitHub Enterprise remote queries gh with a host-prefixed slug", func() {
 		gh.AvailableReturns(true)
 		gh.KnownHostsReturns([]string{"github.example.com"})
-		gh.PRListReturns([]vcs.PR{{Number: 1}}, nil)
+		gh.PRListReturns([]vcs.PR{{Number: 1, State: "OPEN"}}, nil)
 		git.RemoteURLReturns("git@github.example.com:o/r.git", nil)
 		git.RemoteHeadReturns("main", nil)
 		cfg := &config.Config{Projects: []config.Project{{Path: "/r"}}}
@@ -262,5 +363,54 @@ var _ = Describe("Engine.Summary — graceful degradation", func() {
 		Expect(res.Rows[0].PR).To(Equal(dashboard.PRCell{State: dashboard.PRCounted, Count: 1}))
 		slug, _ := gh.PRListArgsForCall(0)
 		Expect(slug).To(Equal("github.example.com/o/r"))
+	})
+
+	It("when gh CLI is absent: PR cell '-' (NoSlug) and Problems is 0 even with a local WIP branch", func() {
+		// Forge repo whose CLI is unavailable: isForge=true but avail=false, so
+		// allPRs is nil and prState remains PRNoSlug. The nil PR list would cause
+		// wipRows to misclassify the local branch as orphaned WIP (no tk, not in any
+		// seen PR) and inflate Problems. Fix 1's !isForge||PRCounted guard must catch
+		// this and degrade Problems to 0.
+		gh.AvailableReturns(false)
+		git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
+		git.LocalBranchesReturns([]vcs.Branch{{Name: "wip/thing"}}, nil)
+		git.RemoteBranchesReturns([]string{}, nil)
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(false, nil)
+		cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
+		res, _ := eng.Summary(cfg, false)
+		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRNoSlug))
+		Expect(res.Rows[0].Problems).To(Equal(0))
+	})
+
+	It("when gh fails: PR cell is Unknown and Problems is 0, even with a local WIP branch", func() {
+		// Arrange: a forge repo whose PRList returns an error. A local WIP branch
+		// exists that would otherwise surface as a problem, but PR data is unreliable
+		// so Problems must be zeroed rather than inflated.
+		gh.AvailableReturns(true)
+		gh.PRListReturns(nil, errors.New("gh flap"))
+		git.RemoteURLReturns("git@github.com:o/r.git", nil) // GitHub host -> routes to gh
+		git.LocalBranchesReturns([]vcs.Branch{{Name: "wip/thing"}}, nil)
+		git.RemoteBranchesReturns([]string{}, nil)
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(false, nil)
+		cfg := &config.Config{Projects: []config.Project{{Path: "/r", Slug: "o/r"}}}
+		res, _ := eng.Summary(cfg, false)
+		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRUnknown))
+		Expect(res.Rows[0].Problems).To(Equal(0))
+	})
+
+	It("a no-forge repo (PRNoSlug) still counts local WIP problems", func() {
+		// PRNoSlug is a repo without a configured forge; its local problems are
+		// real and must not be suppressed by the PRUnknown guard.
+		git.RemoteURLReturns("", errors.New("no remote")) // no forge slug resolves
+		git.LocalBranchesReturns([]vcs.Branch{{Name: "wip/thing"}}, nil)
+		git.RemoteBranchesReturns([]string{}, nil)
+		git.LocalBranchExistsReturns(true, nil)
+		git.RemoteBranchExistsReturns(false, nil)
+		cfg := &config.Config{Projects: []config.Project{{Path: "/r"}}}
+		res, _ := eng.Summary(cfg, false)
+		Expect(res.Rows[0].PR.State).To(Equal(dashboard.PRNoSlug))
+		Expect(res.Rows[0].Problems).To(BeNumerically(">", 0))
 	})
 })

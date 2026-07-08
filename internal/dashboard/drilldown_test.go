@@ -224,10 +224,10 @@ var _ = Describe("Engine WIP section", func() {
 		rows := eng.WIPRowsForTest(r, nil, tickets)
 		byBranch := map[string]dashboardWIP{}
 		for _, w := range rows {
-			byBranch[w.Branch] = dashboardWIP{w.TKID, w.Lifecycle, w.Issue}
+			byBranch[w.Branch] = dashboardWIP{w.TKID, w.Lifecycle, w.Problem}
 		}
-		Expect(byBranch["fix/12-x"]).To(Equal(dashboardWIP{"t12", "in-development", ""}))
-		Expect(byBranch["orphan"]).To(Equal(dashboardWIP{"", "-", "no tk"}))
+		Expect(byBranch["fix/12-x"]).To(Equal(dashboardWIP{tkid: "t12", lc: "in-development", problem: ""}))
+		Expect(byBranch["orphan"]).To(Equal(dashboardWIP{tkid: "", lc: "-", problem: "no tk"}))
 	})
 
 	It("appends standalone in-flight tks not matched and not in a PR", func() {
@@ -241,7 +241,7 @@ var _ = Describe("Engine WIP section", func() {
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0]).To(Equal(dashboard.WIPRow{
 			Lifecycle: "", Sync: dashboard.SyncNA, TKID: "solo", Branch: "(no branch)",
-			Title: "", Issue: "no external-ref / branch", IssueSev: dashboard.SevRed,
+			Title: "", Problem: "no external-ref / branch", ProblemSev: dashboard.SevRed,
 		}))
 	})
 
@@ -255,7 +255,7 @@ var _ = Describe("Engine WIP section", func() {
 		Expect(rows).To(HaveLen(1))
 		Expect(rows[0]).To(Equal(dashboard.WIPRow{
 			Lifecycle: "", Sync: dashboard.SyncNA, TKID: "solo", Branch: "(no branch)",
-			Title: "", Issue: "branch feat/x missing", IssueSev: dashboard.SevRed,
+			Title: "", Problem: "branch feat/x missing", ProblemSev: dashboard.SevRed,
 		}))
 	})
 })
@@ -350,7 +350,7 @@ var _ = Describe("Engine.Drilldown", func() {
 	})
 })
 
-type dashboardWIP struct{ tkid, lc, issue string }
+type dashboardWIP struct{ tkid, lc, problem string }
 
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (func() bool {
@@ -545,16 +545,16 @@ var _ = Describe("Engine drilldown — review coverage", func() {
 			git.DivergenceReturns(0, 0, nil)
 			rows := eng.WIPRowsForTest(r, nil, nil)
 			Expect(rows).To(HaveLen(1))
-			Expect(rows[0].Issue).To(Equal("no tk"))
-			Expect(rows[0].IssueSev).To(Equal(dashboard.SevYellow))
+			Expect(rows[0].Problem).To(Equal("no tk"))
+			Expect(rows[0].ProblemSev).To(Equal(dashboard.SevYellow))
 		})
 		It("colors a no-tk out-of-sync branch red", func() {
 			git.LocalBranchesReturns([]vcs.Branch{{Name: "loner"}}, nil)
 			git.RemoteBranchExistsReturns(false, nil) // local only -> SyncBad
 			rows := eng.WIPRowsForTest(r, nil, nil)
 			Expect(rows).To(HaveLen(1))
-			Expect(rows[0].Issue).To(Equal("no tk · local only — not pushed"))
-			Expect(rows[0].IssueSev).To(Equal(dashboard.SevRed))
+			Expect(rows[0].Problem).To(Equal("no tk · local only — not pushed"))
+			Expect(rows[0].ProblemSev).To(Equal(dashboard.SevRed))
 		})
 	})
 })

@@ -50,3 +50,13 @@ func (e Engine) SelectForgeForTest(r config.Resolved) (slug, kind string, ok boo
 // ClassifyMergeForTest / MergeNoteForTest expose the merge-status helpers.
 func ClassifyMergeForTest(pr vcs.PR) MergeStatus             { return classifyMerge(pr) }
 func MergeNoteForTest(s MergeStatus, reason string) FlagNote { return mergeNote(s, reason) }
+
+// PrCellForTest exposes the unexported prCell method to the black-box _test package.
+func (e Engine) PrCellForTest(state PRState, allPRs []vcs.PR, tickets []dticket) PRCell {
+	return e.prCell(state, allPRs, tickets)
+}
+
+// ProblemCountForTest exposes the unexported problemCount method to the black-box _test package.
+func (e Engine) ProblemCountForTest(r config.Resolved, prs []vcs.PR, tickets []dticket) int {
+	return e.problemCount(r, prs, tickets)
+}

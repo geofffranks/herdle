@@ -14,10 +14,11 @@ import (
 // whose content is wider, so a long branch name no longer shoves the trailing
 // columns out of alignment.
 const (
-	colProject = 30
-	colBranch  = 26
-	colPRs     = 4
-	colMerge   = 7 // fits "✗N ✓M"
+	colProject  = 30
+	colBranch   = 26
+	colPRs      = 4
+	colMerge    = 7 // fits "✗N ✓M"
+	colProblems = 8 // fits "problems"
 )
 
 // Summary writes the cross-project summary layout for rows to w. The view is
@@ -35,36 +36,38 @@ func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched bool, absentForge
 	out := &errWriter{w: w}
 
 	// Render every cell up front so the widths can be measured before emitting.
-	type cells struct{ project, branch, prs, merge, tk string }
+	type cells struct{ project, branch, prs, merge, problems, tk string }
 	body := make([]cells, len(rows))
-	wp, wb, wpr, wm := colProject, colBranch, colPRs, colMerge
+	wp, wb, wpr, wm, wprob := colProject, colBranch, colPRs, colMerge, colProblems
 	for i, r := range rows {
-		c := cells{r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), tkCell(r.TK)}
+		c := cells{r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), problemsCell(r.Problems), tkCell(r.TK)}
 		body[i] = c
 		wp = max(wp, dispWidth(c.project))
 		wb = max(wb, dispWidth(c.branch))
 		wpr = max(wpr, dispWidth(c.prs))
 		wm = max(wm, dispWidth(c.merge))
+		wprob = max(wprob, dispWidth(c.problems))
 	}
 
-	emit := func(project, branch, prs, merge, tk string) {
+	emit := func(project, branch, prs, merge, problems, tk string) {
 		out.line(padRightWidth(project, wp) + " " +
 			padRightWidth(branch, wb) + " " +
 			padLeftWidth(prs, wpr) + "  " +
-			padRightWidth(merge, wm) + " " + tk)
+			padRightWidth(merge, wm) + " " +
+			padLeftWidth(problems, wprob) + "  " + tk)
 	}
 	dashes := func(s string) string { return strings.Repeat("-", dispWidth(s)) }
 
-	emit("PROJECT", "BRANCH", "PRs", "merge", "tk(ip/ready)")
-	emit(dashes("PROJECT"), dashes("BRANCH"), dashes("PRs"), dashes("merge"), dashes("tk(ip/ready)"))
+	emit("PROJECT", "BRANCH", "PRs", "merge", "problems", "tk(ip/ready)")
+	emit(dashes("PROJECT"), dashes("BRANCH"), dashes("PRs"), dashes("merge"), dashes("problems"), dashes("tk(ip/ready)"))
 	for _, c := range body {
-		emit(c.project, c.branch, c.prs, c.merge, c.tk)
+		emit(c.project, c.branch, c.prs, c.merge, c.problems, c.tk)
 	}
 	note := "cached — herdle --fetch to refresh"
 	if fetched {
 		note = "fetched"
 	}
-	footer := "(" + note + `)  tk = in-progress/ready · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge`
+	footer := "(" + note + `)  tk = in-progress/ready · problems = local/cleanup problems · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge`
 	if len(absentForges) > 0 {
 		footer += " · " + strings.Join(absentForges, "/") + " not found — PR/MR counts hidden"
 	}
@@ -127,6 +130,15 @@ func mergeCell(p dashboard.PRCell) string {
 		}
 		return strings.Join(parts, " ")
 	}
+}
+
+// problemsCell renders the per-project problem count; 0 -> "-" (calm, matching the
+// merge cell's "nothing to show" dash).
+func problemsCell(n int) string {
+	if n == 0 {
+		return "-"
+	}
+	return strconv.Itoa(n)
 }
 
 func tkCell(t dashboard.TKCell) string {

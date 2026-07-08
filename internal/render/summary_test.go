@@ -15,28 +15,32 @@ import (
 // detached head, dirty + ahead/behind (multibyte arrows), present and absent tk.
 var sampleRows = []dashboard.SummaryRow{
 	{
-		Name: "herdle",
-		Head: dashboard.HeadInfo{Branch: "main"},
-		PR:   dashboard.PRCell{State: dashboard.PRNoSlug},
-		TK:   dashboard.TKCell{Present: true, InProgress: 1, Ready: 4},
+		Name:     "herdle",
+		Head:     dashboard.HeadInfo{Branch: "main"},
+		PR:       dashboard.PRCell{State: dashboard.PRNoSlug},
+		TK:       dashboard.TKCell{Present: true, InProgress: 1, Ready: 4},
+		Problems: 0,
 	},
 	{
-		Name: "dcs-retribution",
-		Head: dashboard.HeadInfo{Branch: "fix/123", Dirty: true, Ahead: 2, Behind: 1},
-		PR:   dashboard.PRCell{State: dashboard.PRCounted, Count: 3, Attention: 2, Ready: 1},
-		TK:   dashboard.TKCell{Present: true},
+		Name:     "dcs-retribution",
+		Head:     dashboard.HeadInfo{Branch: "fix/123", Dirty: true, Ahead: 2, Behind: 1},
+		PR:       dashboard.PRCell{State: dashboard.PRCounted, Count: 3, Attention: 2, Ready: 1},
+		TK:       dashboard.TKCell{Present: true},
+		Problems: 3,
 	},
 	{
-		Name: "plain",
-		Head: dashboard.HeadInfo{Branch: ""},
-		PR:   dashboard.PRCell{State: dashboard.PRUnknown},
-		TK:   dashboard.TKCell{Present: false},
+		Name:     "plain",
+		Head:     dashboard.HeadInfo{Branch: ""},
+		PR:       dashboard.PRCell{State: dashboard.PRUnknown},
+		TK:       dashboard.TKCell{Present: false},
+		Problems: 0,
 	},
 	{
-		Name: "quiet",
-		Head: dashboard.HeadInfo{Branch: "main"},
-		PR:   dashboard.PRCell{State: dashboard.PRCounted, Count: 2}, // all neutral -> merge "-"
-		TK:   dashboard.TKCell{Present: true, Ready: 1},
+		Name:     "quiet",
+		Head:     dashboard.HeadInfo{Branch: "main"},
+		PR:       dashboard.PRCell{State: dashboard.PRCounted, Count: 2}, // all neutral -> merge "-"
+		TK:       dashboard.TKCell{Present: true, Ready: 1},
+		Problems: 0,
 	},
 }
 

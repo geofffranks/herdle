@@ -47,10 +47,11 @@ type TKCell struct {
 
 // SummaryRow is one project's row in the cross-project summary.
 type SummaryRow struct {
-	Name string
-	Head HeadInfo
-	PR   PRCell
-	TK   TKCell
+	Name     string
+	Head     HeadInfo
+	PR       PRCell
+	TK       TKCell
+	Problems int // count of flagged conditions in this repo's drilldown (excl. merge attention)
 }
 
 // SummaryResult is the cross-project summary plus run-wide degradation state.

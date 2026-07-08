@@ -15,7 +15,7 @@ type SyncState int
 
 const (
 	SyncOK  SyncState = iota // local == remote
-	SyncBad                  // differs / one-sided (reason -> Issue)
+	SyncBad                  // differs / one-sided (reason -> Problem)
 	SyncNA                   // no branch
 )
 
@@ -51,13 +51,13 @@ type MergedRow struct {
 }
 
 type WIPRow struct {
-	Lifecycle string
-	Sync      SyncState
-	TKID      string
-	Branch    string
-	Title     string
-	Issue     string
-	IssueSev  Severity
+	Lifecycle  string
+	Sync       SyncState
+	TKID       string
+	Branch     string
+	Title      string
+	Problem    string
+	ProblemSev Severity
 }
 
 type UpNextRow struct {
@@ -318,19 +318,19 @@ func (e Engine) wipRows(r config.Resolved, prs []vcs.PR, tickets []dticket) []WI
 			row.Title = t.Title
 		} else {
 			row.Lifecycle = "-"
-			row.Issue = "no tk"
+			row.Problem = "no tk"
 		}
 		if reason != "" {
-			if row.Issue != "" {
-				row.Issue += " · "
+			if row.Problem != "" {
+				row.Problem += " · "
 			}
-			row.Issue += reason
+			row.Problem += reason
 		}
-		if row.Issue != "" {
+		if row.Problem != "" {
 			if sync == SyncBad {
-				row.IssueSev = SevRed
+				row.ProblemSev = SevRed
 			} else {
-				row.IssueSev = SevYellow
+				row.ProblemSev = SevYellow
 			}
 		}
 		rows = append(rows, row)
@@ -347,9 +347,9 @@ func (e Engine) wipRows(r config.Resolved, prs []vcs.PR, tickets []dticket) []WI
 		row := WIPRow{Lifecycle: t.EffLifecycle, Sync: SyncNA, TKID: t.ID, Branch: "(no branch)", Title: t.Title}
 		switch {
 		case ghNum(t.ExternalRef) == "" && t.Branch == "":
-			row.Issue, row.IssueSev = "no external-ref / branch", SevRed
+			row.Problem, row.ProblemSev = "no external-ref / branch", SevRed
 		case t.Branch != "":
-			row.Issue, row.IssueSev = "branch "+t.Branch+" missing", SevRed
+			row.Problem, row.ProblemSev = "branch "+t.Branch+" missing", SevRed
 		}
 		rows = append(rows, row)
 	}

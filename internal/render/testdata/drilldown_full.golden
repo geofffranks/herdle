@@ -11,7 +11,7 @@
   #6     old                            merged thing                              ⚠ local branch
 
 — work in progress (in-flight tk + branches, not in a PR) —
-  state               sync tk        branch                         feature                                  issues
+  state               sync tk        branch                         feature                                  problems
   in-development      ✗    her-bbbb  feature-y                      the feature                              ↑1 unpushed
   -                   ·    -         orphan                                                                  no tk
 
@@ -21,6 +21,6 @@
 — design artifacts (specs / plans / validation) —
   her-aaaa  specs  2026-06-13-her-aaaa-x-design.md
 
-sync: ✓ local==remote · ✗ differs (see issues) · · n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned
+sync: ✓ local==remote · ✗ differs (see problems) · · n/a — merged-PR & upstream-gone branches hidden, remote auto-pruned
 PR status: ✓ ready to merge · ✗ conflicts · ✗ checks failing · ✎ changes requested · ⚠ blocked · — pending/draft/computing
 lifecycle: - (not started) → designed → planned → in-development → pending-validation → validated

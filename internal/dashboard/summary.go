@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/geofffranks/herdle/internal/config"
+	"github.com/geofffranks/herdle/internal/vcs"
 )
 
 // maxSummaryConcurrency bounds how many projects are gathered at once. Each
@@ -74,11 +75,35 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 			if present {
 				tickets = e.ticketTable(p.Path)
 			}
+			// Fetch this project's PRs once (state "all") and feed the PR cell now
+			// (problemCount reuses the same slice).
+			var (
+				allPRs  []vcs.PR
+				prState = PRNoSlug
+			)
+			if isForge && avail && slug != "" {
+				if got, err := client.PRList(slug, "all"); err != nil {
+					prState = PRUnknown
+				} else {
+					allPRs, prState = got, PRCounted
+				}
+			}
+			// Count problems only when the PR data is trustworthy. A repo with no forge
+			// legitimately has no PRs, so its local WIP/cleanup problems are real and
+			// should be counted. But a forge repo whose PRs we could not fetch — CLI
+			// absent, unresolved slug, or a failed call (prState != PRCounted) — has a nil
+			// PR list, which would make wipRows treat real PR branches as orphaned WIP and
+			// inflate the count. Degrade to zero there (the PR cell already shows "-"/"?").
+			problems := 0
+			if !isForge || prState == PRCounted {
+				problems = e.problemCount(r, allPRs, tickets)
+			}
 			rows[i] = SummaryRow{
-				Name: r.Name,
-				Head: e.head(p.Path),
-				PR:   e.prCell(client, slug, isForge && avail, tickets),
-				TK:   e.tkCell(p.Path, present, tickets),
+				Name:     r.Name,
+				Head:     e.head(p.Path),
+				PR:       e.prCell(prState, allPRs, tickets),
+				TK:       e.tkCell(p.Path, present, tickets),
+				Problems: problems,
 			}
 		}(i, p)
 	}
@@ -95,6 +120,32 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 	return SummaryResult{Rows: rows, AbsentForges: absentForges}, nil
 }
 
+// problemCount totals the flagged conditions the drilldown surfaces for one repo,
+// excluding the merge-status classification (that is the summary's merge column).
+// It reuses the drilldown row builders so the summary count equals the drilldown
+// by construction. prs is the "all"-state list shared with prCell.
+func (e Engine) problemCount(r config.Resolved, prs []vcs.PR, tickets []dticket) int {
+	n := len(e.mergedCleanupRows(prs, tickets, r.Path, r.Remote))
+	for _, w := range e.wipRows(r, prs, tickets) {
+		if w.Problem != "" {
+			n++
+		}
+	}
+	for _, pr := range e.openPRRows(prs, tickets, r.Path, r.Remote) {
+		// openPRRows always puts the merge-status note at Notes[0]; a PR is a problem
+		// only when it *also* carries an actionable (>= SevYellow) sync or tk-validation
+		// note. Dim SevNone notes (e.g. "<remote> only" for a branch not checked out
+		// locally) are informational, not problems.
+		for _, note := range pr.Notes[1:] {
+			if note.Sev >= SevYellow {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
+
 // head mirrors wip's git_head.
 func (e Engine) head(path string) HeadInfo {
 	var h HeadInfo
@@ -109,21 +160,20 @@ func (e Engine) head(path string) HeadInfo {
 	return h
 }
 
-// prCell mirrors wip's pr_count, extended for graceful degradation: when the
-// project's forge CLI is absent or the project routes to no forge, the cell is
-// PRNoSlug ("-") and the forge is not called. A forge project whose list call
-// fails is PRUnknown ("?"). query is true only when a forge client is available
-// and a slug resolved.
-func (e Engine) prCell(client forgeClient, slug string, query bool, tickets []dticket) PRCell {
-	if !query || client == nil || slug == "" {
-		return PRCell{State: PRNoSlug}
+// prCell builds the summary PR cell from an already-fetched PR list (fetched with
+// state "all" so the same slice can feed problemCount's merged-cleanup detection).
+// state carries forge availability: PRNoSlug/PRUnknown pass straight through;
+// PRCounted means count and classify the OPEN subset only.
+func (e Engine) prCell(state PRState, allPRs []vcs.PR, tickets []dticket) PRCell {
+	if state != PRCounted {
+		return PRCell{State: state}
 	}
-	prs, err := client.PRList(slug, "open")
-	if err != nil {
-		return PRCell{State: PRUnknown}
-	}
-	cell := PRCell{State: PRCounted, Count: len(prs)}
-	for _, pr := range prs {
+	cell := PRCell{State: PRCounted}
+	for _, pr := range allPRs {
+		if pr.State != "OPEN" { // the "all" fetch also carries MERGED/CLOSED; the count is open-only
+			continue
+		}
+		cell.Count++
 		switch classifyMerge(pr) {
 		case MergeReady:
 			if _, bad := prTKIssue(tickets, pr.Number, pr.HeadRefName); bad {

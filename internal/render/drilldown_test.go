@@ -24,8 +24,8 @@ var sampleDrilldown = dashboard.Drilldown{
 		{Number: 6, Head: "old", Title: "merged thing", Flags: dashboard.FlagNote{Text: "⚠ local branch", Sev: dashboard.SevYellow}},
 	},
 	WIP: []dashboard.WIPRow{
-		{Lifecycle: "in-development", Sync: dashboard.SyncBad, TKID: "her-bbbb", Branch: "feature-y", Title: "the feature", Issue: "↑1 unpushed", IssueSev: dashboard.SevRed},
-		{Lifecycle: "-", Sync: dashboard.SyncNA, TKID: "", Branch: "orphan", Title: "", Issue: "no tk", IssueSev: dashboard.SevYellow},
+		{Lifecycle: "in-development", Sync: dashboard.SyncBad, TKID: "her-bbbb", Branch: "feature-y", Title: "the feature", Problem: "↑1 unpushed", ProblemSev: dashboard.SevRed},
+		{Lifecycle: "-", Sync: dashboard.SyncNA, TKID: "", Branch: "orphan", Title: "", Problem: "no tk", ProblemSev: dashboard.SevYellow},
 	},
 	UpNext: []dashboard.UpNextRow{
 		{Lifecycle: "planned", TKID: "her-cccc", Title: "next up", Priority: 2},

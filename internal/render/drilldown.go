@@ -57,14 +57,14 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 		out.line("")
 		out.line(p.hdr("— work in progress (in-flight tk + branches, not in a " + noun + ") —"))
 		out.line(p.bld + "  " + padRight("state", 19) + " " + padRight("sync", 4) + " " +
-			padRight("tk", 9) + " " + padRight("branch", 30) + " " + padRight("feature", 40) + " issues" + p.rst)
+			padRight("tk", 9) + " " + padRight("branch", 30) + " " + padRight("feature", 40) + " problems" + p.rst)
 		for _, r := range d.WIP {
-			issue := ""
-			if r.Issue != "" {
-				issue = p.sevColor(r.IssueSev) + r.Issue + p.rst
+			problem := ""
+			if r.Problem != "" {
+				problem = p.sevColor(r.ProblemSev) + r.Problem + p.rst
 			}
 			out.line("  " + p.fstate(r.Lifecycle) + " " + p.fsync(r.Sync) + " " +
-				p.ftk(r.TKID) + " " + p.fbranch(r.Branch, 30) + " " + p.fdesc(r.Title, 40) + " " + issue)
+				p.ftk(r.TKID) + " " + p.fbranch(r.Branch, 30) + " " + p.fdesc(r.Title, 40) + " " + problem)
 		}
 	}
 
@@ -89,7 +89,7 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 
 	// legends (always)
 	out.line("")
-	out.line(fmt.Sprintf("sync: %s✓%s local==remote · %s✗%s differs (see issues) · %s·%s n/a — merged-%s & upstream-gone branches hidden, remote auto-pruned",
+	out.line(fmt.Sprintf("sync: %s✓%s local==remote · %s✗%s differs (see problems) · %s·%s n/a — merged-%s & upstream-gone branches hidden, remote auto-pruned",
 		p.grn, p.rst, p.red, p.rst, p.dim, p.rst, noun))
 	out.line(noun + " status: " + p.grn + "✓ ready to merge" + p.rst + " · " +
 		p.red + "✗ conflicts" + p.rst + " · " + p.red + "✗ checks failing" + p.rst + " · " +

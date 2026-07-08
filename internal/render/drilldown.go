@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/geofffranks/herdle/internal/dashboard"
+	"github.com/geofffranks/herdle/internal/vcs"
 )
 
 // Drilldown writes wip's per-repo drilldown for d to w, mirroring drilldown().
@@ -49,6 +50,32 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 		for _, r := range d.MergedCleanup {
 			out.line("  " + p.fpr(r.Number) + " " + p.fbranch(r.Head, 30) + " " +
 				p.fdesc(r.Title, 40) + "  " + p.fflags(r.Flags))
+		}
+	}
+
+	// open issues (source-of-truth repos only)
+	if d.TrackIssues {
+		if d.IssuesUnavailable {
+			out.line("")
+			out.line(p.hdr("— open issues —"))
+			out.line("  (" + cli + " unavailable)")
+		} else if len(d.OpenIssues) > 0 || d.TriagedHidden > 0 {
+			out.line("")
+			hdr := "— open issues —"
+			if d.IssuesCapped {
+				hdr += fmt.Sprintf(" (showing first %d)", vcs.IssueFetchLimit)
+			}
+			out.line(p.hdr(hdr))
+			for _, r := range d.OpenIssues {
+				marker := p.ftklist(r.TKs)
+				if r.Untriaged {
+					marker = p.sevColor(dashboard.SevYellow) + "⚑ untriaged" + p.rst
+				}
+				out.line("  " + p.fpr(r.Number) + " " + marker + "  " + p.fdesc(r.Title, 50))
+			}
+			if d.TriagedHidden > 0 {
+				out.line("  " + p.dim + "+ " + strconv.Itoa(d.TriagedHidden) + " triaged" + p.rst)
+			}
 		}
 	}
 
@@ -97,6 +124,9 @@ func Drilldown(w io.Writer, d dashboard.Drilldown, color bool) error {
 		p.dim + "— pending/draft/computing" + p.rst)
 	out.line(fmt.Sprintf("lifecycle: %s-%s (not started) → %sdesigned%s → %splanned%s → %sin-development%s → %spending-validation%s → %svalidated%s",
 		p.dim, p.rst, p.mag, p.rst, p.blu, p.rst, p.cyn, p.rst, p.yel, p.rst, p.grn, p.rst))
+	if d.TrackIssues {
+		out.line("issues: " + p.yel + "⚑ untriaged" + p.rst + " (needs a tk) · [tk …] tracked — source-of-truth repos only")
+	}
 	if d.ForgeAbsent {
 		out.line(p.dim + cli + ": not found — " + noun + " sections hidden" + p.rst)
 	}

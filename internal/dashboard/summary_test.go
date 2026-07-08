@@ -275,6 +275,39 @@ var _ = Describe("Engine.ProblemCount", func() {
 	})
 })
 
+var _ = Describe("Engine.issueCell", func() {
+	var (
+		gh  *vcsfakes.FakeGHRunner
+		eng dashboard.Engine
+	)
+
+	BeforeEach(func() {
+		gh = &vcsfakes.FakeGHRunner{}
+		eng = dashboard.Engine{GH: gh}
+	})
+
+	It("builds a tracked issue cell with an untriaged sub-count", func() {
+		gh.IssueListReturns([]vcs.Issue{
+			{Number: 59, State: "OPEN"}, // triaged by gh-59 ticket
+			{Number: 61, State: "OPEN"}, // untriaged
+		}, nil)
+		// ticketsWithGh59: one ticket tracking issue #59 via ExternalRef "gh-59"
+		ticketsWithGh59 := eng.TicketsForTest([]vcs.Ticket{
+			{ID: "her-x2b", Status: "open", ExternalRef: "gh-59"},
+		})
+		cell := eng.IssueCellForTest(gh, "o/r", true, ticketsWithGh59)
+		Expect(cell).To(Equal(dashboard.IssueCell{State: dashboard.IssueTracked, Open: 2, Untriaged: 1}))
+	})
+	It("is untracked and makes no forge call when query is false (fork/no forge)", func() {
+		Expect(eng.IssueCellForTest(gh, "o/r", false, nil)).To(Equal(dashboard.IssueCell{State: dashboard.IssueUntracked}))
+		Expect(gh.IssueListCallCount()).To(BeZero()) // spec Cost: no IssueList call for a fork/forge-less repo
+	})
+	It("is unknown when IssueList errors", func() {
+		gh.IssueListReturns(nil, errors.New("boom"))
+		Expect(eng.IssueCellForTest(gh, "o/r", true, nil)).To(Equal(dashboard.IssueCell{State: dashboard.IssueUnknown}))
+	})
+})
+
 var _ = Describe("Engine.prCell", func() {
 	var eng dashboard.Engine
 

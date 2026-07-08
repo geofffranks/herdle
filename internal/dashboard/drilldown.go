@@ -73,23 +73,70 @@ type ArtifactRow struct {
 	Filename string
 }
 
+// triagedListLimit caps how many triaged issues the drilldown lists individually;
+// beyond it the tail collapses to "+ N triaged" to keep the section calm.
+const triagedListLimit = 10
+
+// IssueRow represents one open forge issue in the drilldown.
+type IssueRow struct {
+	Number    int
+	Title     string
+	TKs       []string // tracking tk ids; empty => Untriaged
+	Untriaged bool
+}
+
+// issueRows splits open issues into un-triaged (listed first, actionable) and
+// triaged (correlated to a tk). Up to triagedListLimit triaged issues are listed
+// individually; any beyond that collapse into triagedHidden (the excess count),
+// rendered as "+ N triaged". capped is true when the fetch hit the page limit
+// (the true total is unknown).
+func issueRows(issues []vcs.Issue, tickets []dticket) (rows []IssueRow, triagedHidden int, capped bool) {
+	capped = len(issues) >= vcs.IssueFetchLimit
+	var untriaged, triaged []IssueRow
+	for _, is := range issues {
+		if is.State != "OPEN" { // defensive: we request open, but never trust the wire
+			continue
+		}
+		tks := issueTKs(tickets, is.Number)
+		row := IssueRow{Number: is.Number, Title: is.Title, TKs: tks, Untriaged: len(tks) == 0}
+		if row.Untriaged {
+			untriaged = append(untriaged, row)
+		} else {
+			triaged = append(triaged, row)
+		}
+	}
+	rows = append(rows, untriaged...)
+	if len(triaged) <= triagedListLimit {
+		rows = append(rows, triaged...)
+	} else {
+		rows = append(rows, triaged[:triagedListLimit]...)
+		triagedHidden = len(triaged) - triagedListLimit
+	}
+	return rows, triagedHidden, capped
+}
+
 // Drilldown is the typed per-repo view; render turns it into wip-identical bytes.
 type Drilldown struct {
 	Name, Path string
 	// Forge is the resolved forge kind for this repo: "github", "gitlab", or ""
 	// (no forge). The renderer uses it to name the right CLI (gh vs glab) and noun
 	// (PR vs MR) in section headers and degradation notes.
-	Forge            string
-	Fetched          bool
-	Head             HeadInfo
-	HasSlug          bool
-	ForgeUnavailable bool
-	ForgeAbsent      bool
-	OpenPRs          []PRRow
-	MergedCleanup    []MergedRow
-	WIP              []WIPRow
-	UpNext           []UpNextRow
-	Artifacts        []ArtifactRow
+	Forge             string
+	Fetched           bool
+	Head              HeadInfo
+	HasSlug           bool
+	ForgeUnavailable  bool
+	ForgeAbsent       bool
+	OpenPRs           []PRRow
+	MergedCleanup     []MergedRow
+	TrackIssues       bool
+	OpenIssues        []IssueRow
+	TriagedHidden     int
+	IssuesCapped      bool
+	IssuesUnavailable bool
+	WIP               []WIPRow
+	UpNext            []UpNextRow
+	Artifacts         []ArtifactRow
 }
 
 // divFlag mirrors wip's div_flag: a local branch's divergence vs the given remote.
@@ -433,6 +480,17 @@ func (e Engine) Drilldown(r config.Resolved, fetch bool) (Drilldown, error) {
 
 	d.OpenPRs = e.openPRRows(prs, tickets, r.Path, r.Remote)
 	d.MergedCleanup = e.mergedCleanupRows(prs, tickets, r.Path, r.Remote)
+
+	// Open forge issues — only for source-of-truth repos routed to an available forge.
+	if isForge && avail && r.TrackIssues {
+		d.TrackIssues = true
+		if issues, err := client.IssueList(slug, "open"); err != nil {
+			d.IssuesUnavailable = true
+		} else {
+			d.OpenIssues, d.TriagedHidden, d.IssuesCapped = issueRows(issues, tickets)
+		}
+	}
+
 	d.WIP = e.wipRows(r, prs, tickets)
 	d.UpNext = upNextRows(tickets)
 	d.Artifacts = e.artifactRows(r.Path)

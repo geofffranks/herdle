@@ -25,7 +25,8 @@ var _ = Describe("Config.Resolve", func() {
 		}))
 		// The explicit slug value wins, but the remote host is still probed for
 		// forge routing (the fake returns no URL here, so RemoteHost stays "").
-		Expect(git.RemoteURLCallCount()).To(Equal(1))
+		// TrackIssues also probes for the "upstream" remote => two calls total.
+		Expect(git.RemoteURLCallCount()).To(Equal(2))
 	})
 
 	It("falls back to global defaults when project fields are unset", func() {
@@ -35,7 +36,8 @@ var _ = Describe("Config.Resolve", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(r.Remote).To(Equal("origin"))
 		Expect(r.Base).To(Equal("trunk"))
-		Expect(git.RemoteURLCallCount()).To(Equal(1))
+		// TrackIssues also probes for the "upstream" remote => two calls total.
+		Expect(git.RemoteURLCallCount()).To(Equal(2))
 	})
 
 	It("falls back to upstream when origin is absent (base from RemoteHead, slug from the URL)", func() {
@@ -116,6 +118,50 @@ var _ = Describe("slugFromURL (via Resolve)", func() {
 	_ = vcs.ErrNotARepo // keep the vcs import even if unused above
 })
 
+func gitWith(remotes map[string]string) *vcsfakes.FakeGitRunner {
+	g := &vcsfakes.FakeGitRunner{}
+	g.RemoteURLStub = func(_, remote string) (string, error) {
+		if u, ok := remotes[remote]; ok {
+			return u, nil
+		}
+		return "", errors.New("no such remote")
+	}
+	return g
+}
+
+var _ = Describe("Resolve TrackIssues", func() {
+	cfg := &config.Config{}
+	It("tracks issues when only origin exists (source of truth)", func() {
+		r, _ := cfg.Resolve(config.Project{Path: "/p"}, gitWith(map[string]string{"origin": "git@github.com:me/repo.git"}))
+		Expect(r.TrackIssues).To(BeTrue())
+	})
+	It("does not track when an upstream remote exists (fork)", func() {
+		r, _ := cfg.Resolve(config.Project{Path: "/p"}, gitWith(map[string]string{
+			"origin": "git@github.com:me/repo.git", "upstream": "git@github.com:orig/repo.git"}))
+		Expect(r.TrackIssues).To(BeFalse())
+	})
+	It("issues=true forces tracking on despite an upstream", func() {
+		on := true
+		r, _ := cfg.Resolve(config.Project{Path: "/p", Issues: &on}, gitWith(map[string]string{
+			"origin": "git@github.com:me/repo.git", "upstream": "git@github.com:orig/repo.git"}))
+		Expect(r.TrackIssues).To(BeTrue())
+	})
+	It("issues=false forces tracking off despite no upstream", func() {
+		off := false
+		r, _ := cfg.Resolve(config.Project{Path: "/p", Issues: &off}, gitWith(map[string]string{"origin": "git@github.com:me/repo.git"}))
+		Expect(r.TrackIssues).To(BeFalse())
+	})
+	It("skips the upstream remote probe entirely when an issues= override is set", func() {
+		on := true
+		g := gitWith(map[string]string{"origin": "git@github.com:me/repo.git"})
+		cfg.Resolve(config.Project{Path: "/p", Issues: &on}, g)
+		for i := 0; i < g.RemoteURLCallCount(); i++ {
+			_, remote := g.RemoteURLArgsForCall(i)
+			Expect(remote).NotTo(Equal("upstream")) // override short-circuits the probe — no extra git call
+		}
+	})
+})
+
 var _ = Describe("Config.Resolve — S6 additions", func() {
 	It("prefers origin over upstream when both remotes exist", func() {
 		git := &vcsfakes.FakeGitRunner{}
@@ -170,7 +216,7 @@ var _ = Describe("Config.Resolve — S6 additions", func() {
 		Expect(r.Slug).To(Equal("canon/repo")) // explicit value trusted as-is
 		Expect(r.SlugExplicit).To(BeTrue())
 		Expect(r.RemoteHost).To(Equal("github.com"))  // host resolved for routing
-		Expect(git.RemoteURLCallCount()).To(Equal(1)) // the probe ran
+		Expect(git.RemoteURLCallCount()).To(Equal(2)) // host probe + TrackIssues upstream probe
 	})
 
 	It("strips the port from RemoteHost but retains it in RemoteHostPort", func() {

@@ -104,6 +104,7 @@ func (e Engine) Summary(cfg *config.Config, fetch bool) (SummaryResult, error) {
 				PR:       e.prCell(prState, allPRs, tickets),
 				TK:       e.tkCell(p.Path, present, tickets),
 				Problems: problems,
+				Issues:   e.issueCell(client, slug, isForge && avail && r.TrackIssues, tickets),
 			}
 		}(i, p)
 	}
@@ -183,6 +184,33 @@ func (e Engine) prCell(state PRState, allPRs []vcs.PR, tickets []dticket) PRCell
 			}
 		case MergeConflicts, MergeChecksFailing, MergeChangesRequested, MergeBlocked:
 			cell.Attention++
+		}
+	}
+	return cell
+}
+
+// issueCell builds the summary iss cell. query is true only for a source-of-truth
+// repo (TrackIssues) routed to an available forge with a slug. Issues are not
+// author-filtered — they are the repo's inbound work.
+func (e Engine) issueCell(client forgeClient, slug string, query bool, tickets []dticket) IssueCell {
+	if !query || client == nil || slug == "" {
+		return IssueCell{State: IssueUntracked}
+	}
+	issues, err := client.IssueList(slug, "open")
+	if err != nil {
+		return IssueCell{State: IssueUnknown}
+	}
+	// Capped reflects a full fetch page (there may be more), so it is measured on the
+	// raw result; Open counts only OPEN items, mirroring issueRows' "never trust the
+	// wire" guard so the summary count matches the drilldown's open-issues section.
+	cell := IssueCell{State: IssueTracked, Capped: len(issues) >= vcs.IssueFetchLimit}
+	for _, is := range issues {
+		if is.State != "OPEN" {
+			continue
+		}
+		cell.Open++
+		if !issueTriaged(tickets, is.Number) {
+			cell.Untriaged++
 		}
 	}
 	return cell

@@ -62,6 +62,22 @@ When the dashboard shows a ticket with *no external-ref/branch*, or a branch
 with *no tk*, that is an unlinked association to fix — add the field or create
 the ticket.
 
+### Issue triage via `external-ref`
+
+A ticket's `external-ref` triages a forge issue — removing it from the
+un-triaged (`⚑`) list in the dashboard — when it points at an issue number:
+
+- Short forms: `gh-59`, `github#59`, `gl-59`
+- Long forms: a URL containing `.../issues/59`
+
+A URL containing `.../pull/59` (or `.../merge_requests/59`) does **not** triage
+issue #59 — it is a PR/MR reference, not an issue reference. GitHub shares one
+number namespace for issues and PRs, but herdle distinguishes them by path
+segment: only `/issues/` paths count as issue refs.
+
+herdle never auto-creates tickets. To triage an issue, create a ticket manually
+and set its `external-ref` to the issue number or URL.
+
 ---
 
 ## Design artifacts

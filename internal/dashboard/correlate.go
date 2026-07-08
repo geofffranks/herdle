@@ -130,6 +130,39 @@ func tkForBranch(tickets []dticket, branch string) (dticket, bool) {
 	return dticket{}, false
 }
 
+// refKind classifies a tk external-ref by an explicit path hint: a ref containing
+// "/pull/" or "/merge_requests/" is a PR/MR, "/issues/" is an issue, and a bare
+// "gh-59"/"59" is ambiguous (""). Used to keep a PR ref from triaging a same-
+// numbered issue (GitHub shares one number namespace between PRs and issues).
+func refKind(ref string) string {
+	switch {
+	case strings.Contains(ref, "/pull/"), strings.Contains(ref, "/merge_requests/"):
+		return "pr"
+	case strings.Contains(ref, "/issues/"):
+		return "issue"
+	default:
+		return ""
+	}
+}
+
+// issueTKs returns the ids of non-closed tickets that track a given issue number:
+// the ticket's external-ref resolves to issueNum and is not explicitly a PR ref.
+func issueTKs(tickets []dticket, issueNum int) []string {
+	num := strconv.Itoa(issueNum)
+	var out []string
+	for _, t := range tickets {
+		if ghNum(t.ExternalRef) == num && refKind(t.ExternalRef) != "pr" {
+			out = append(out, t.ID)
+		}
+	}
+	return out
+}
+
+// issueTriaged reports whether any non-closed ticket tracks the issue.
+func issueTriaged(tickets []dticket, issueNum int) bool {
+	return len(issueTKs(tickets, issueNum)) > 0
+}
+
 // tkInAnyPR mirrors wip's standalone-tk filter: does any PR correlate to this
 // ticket (same predicate shape as tksForPR, ticket-centric). A ticket with no
 // ghNum and no branch correlates to nothing.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type ghRunner struct{}
@@ -28,6 +29,16 @@ func (r ghRunner) PRList(slug, state string) ([]PR, error) {
 	// gh is occasionally flaky; retryJSONFetch retries once and only trusts a real
 	// JSON array, so a transient failure never looks like "no PRs".
 	return retryJSONFetch[PR](fmt.Sprintf("gh pr list -R %s", slug), func() (result, error) {
+		return r.gh(args...)
+	})
+}
+
+func (r ghRunner) IssueList(slug, state string) ([]Issue, error) {
+	args := []string{
+		"issue", "list", "-R", slug, "--state", state,
+		"--limit", strconv.Itoa(IssueFetchLimit), "--json", "number,title,state",
+	}
+	return retryJSONFetch[Issue](fmt.Sprintf("gh issue list -R %s", slug), func() (result, error) {
 		return r.gh(args...)
 	})
 }

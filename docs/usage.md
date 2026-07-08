@@ -96,6 +96,15 @@ priority, title, and derived lifecycle state.
 `docs/superpowers/` that herdle correlates to tickets by embedded ticket ID in the
 filename.
 
+**Open issues** (rendered under an `— open issues —` header) — open issues on the forge for source-of-truth repos (repos with
+no `upstream` git remote; see [Source-of-truth rule](#source-of-truth-rule) below).
+Un-triaged issues (those not linked to a `tk` ticket via `external-ref`) are listed
+first with a `⚑ untriaged` marker. Triaged issues show their correlated `[tk …]`
+ticket ID. A large triaged set collapses to `+ N triaged`. When the forge fetch hit
+the 100-issue limit, the section notes `(showing first 100)`. If the forge CLI is
+unavailable, the section shows `(gh unavailable)` or `(glab unavailable)`. The
+section legend reads: `issues: ⚑ untriaged (needs a tk) · [tk …] tracked — source-of-truth repos only`.
+
 ### The sync column
 
 `✓` means the local branch is in sync with (or ahead of) its origin tracking
@@ -121,6 +130,42 @@ instead under merged-PR cleanup.
 
 For deeper semantics on how tickets, branches, and PRs correlate, see
 [tk-conventions.md](tk-conventions.md).
+
+---
+
+## Source-of-truth rule
+
+herdle shows open issues only for repos that are the canonical source of truth —
+identified by the absence of an `upstream` git remote. The fork convention names
+the canonical repo `upstream`, so any repo with that remote is treated as a fork
+and its issues are suppressed.
+
+**Summary column:** the rightmost column in the cross-project summary (`iss`) shows:
+
+| Value | Meaning |
+|---|---|
+| `-` | Untracked: a fork (has `upstream` remote), no slug configured, or no forge configured |
+| `?` | Forge error — could not fetch issues |
+| `0` | Source-of-truth repo with zero open issues |
+| `7` | 7 open issues (none un-triaged) |
+| `7 ⚑3` | 7 open issues, 3 of which are un-triaged (not linked to a `tk` ticket) |
+| `100+` | 100 or more open issues (fetch hit the 100-issue limit) |
+
+The footer legend reads: `iss = open · ⚑untriaged (source-of-truth repos only)`.
+
+**Override per project:** add an `issues` key to the `[[project]]` block in
+`config.toml` to force the behavior regardless of the `upstream` remote:
+
+```toml
+[[project]]
+path = "/home/me/repos/myrepo"
+issues = false   # force-off: an origin-only clone that is actually a fork
+```
+
+Set `issues = true` to force issue listing on even if an `upstream` remote is
+present. Set `issues = false` to suppress issue listing even if no `upstream`
+remote exists. Omit the key entirely to use the default source-of-truth
+auto-detection.
 
 ---
 

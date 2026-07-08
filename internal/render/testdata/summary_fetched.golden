@@ -1,8 +1,8 @@
-PROJECT                        BRANCH                      PRs  merge   problems  tk(ip/ready)
--------                        ------                      ---  -----   --------  ------------
-herdle                         main                          -  -              -  1/4
-dcs-retribution                fix/123*  ↑2 ↓1               3  ✗2 ✓1          3  0/0
-plain                          (detached)                    ?  ?              -  -
-quiet                          main                          2  -              -  0/1
+PROJECT                        BRANCH                      PRs  merge   problems  tk(ip/ready) iss
+-------                        ------                      ---  -----   --------  ------------ ---
+herdle                         main                          -  -              -  1/4          7 ⚑3
+dcs-retribution                fix/123*  ↑2 ↓1               3  ✗2 ✓1          3  0/0          -
+plain                          (detached)                    ?  ?              -  -            ?
+quiet                          main                          2  -              -  0/1          100+
 
-(fetched)  tk = in-progress/ready · problems = local/cleanup problems · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge
+(fetched)  tk = in-progress/ready · problems = local/cleanup problems · iss = open · ⚑untriaged (source-of-truth repos only) · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge

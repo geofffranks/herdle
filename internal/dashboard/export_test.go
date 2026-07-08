@@ -60,3 +60,8 @@ func (e Engine) PrCellForTest(state PRState, allPRs []vcs.PR, tickets []dticket)
 func (e Engine) ProblemCountForTest(r config.Resolved, prs []vcs.PR, tickets []dticket) int {
 	return e.problemCount(r, prs, tickets)
 }
+
+// IssueCellForTest exposes the unexported issueCell method to the black-box _test package.
+func (e Engine) IssueCellForTest(client forgeClient, slug string, query bool, tickets []dticket) IssueCell {
+	return e.issueCell(client, slug, query, tickets)
+}

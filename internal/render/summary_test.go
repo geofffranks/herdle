@@ -3,6 +3,7 @@ package render_test
 import (
 	"bytes"
 	"os"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -12,7 +13,8 @@ import (
 )
 
 // sampleRows exercises every cell variant: no-slug PR, counted PR, unknown PR,
-// detached head, dirty + ahead/behind (multibyte arrows), present and absent tk.
+// detached head, dirty + ahead/behind (multibyte arrows), present and absent tk,
+// and every IssueCell state (tracked+untriaged, untracked, unknown, capped).
 var sampleRows = []dashboard.SummaryRow{
 	{
 		Name:     "herdle",
@@ -20,6 +22,7 @@ var sampleRows = []dashboard.SummaryRow{
 		PR:       dashboard.PRCell{State: dashboard.PRNoSlug},
 		TK:       dashboard.TKCell{Present: true, InProgress: 1, Ready: 4},
 		Problems: 0,
+		Issues:   dashboard.IssueCell{State: dashboard.IssueTracked, Open: 7, Untriaged: 3},
 	},
 	{
 		Name:     "dcs-retribution",
@@ -27,6 +30,7 @@ var sampleRows = []dashboard.SummaryRow{
 		PR:       dashboard.PRCell{State: dashboard.PRCounted, Count: 3, Attention: 2, Ready: 1},
 		TK:       dashboard.TKCell{Present: true},
 		Problems: 3,
+		Issues:   dashboard.IssueCell{State: dashboard.IssueUntracked},
 	},
 	{
 		Name:     "plain",
@@ -34,6 +38,7 @@ var sampleRows = []dashboard.SummaryRow{
 		PR:       dashboard.PRCell{State: dashboard.PRUnknown},
 		TK:       dashboard.TKCell{Present: false},
 		Problems: 0,
+		Issues:   dashboard.IssueCell{State: dashboard.IssueUnknown},
 	},
 	{
 		Name:     "quiet",
@@ -41,6 +46,7 @@ var sampleRows = []dashboard.SummaryRow{
 		PR:       dashboard.PRCell{State: dashboard.PRCounted, Count: 2}, // all neutral -> merge "-"
 		TK:       dashboard.TKCell{Present: true, Ready: 1},
 		Problems: 0,
+		Issues:   dashboard.IssueCell{State: dashboard.IssueTracked, Open: 100, Capped: true},
 	},
 }
 
@@ -92,6 +98,22 @@ var _ = Describe("render.Summary", func() {
 
 	It("omits the forge note when nothing is absent", func() {
 		Expect(renderSummary(false)).NotTo(ContainSubstring("not found"))
+	})
+
+	It("header row contains the iss column label", func() {
+		out := renderSummary(false)
+		lines := strings.Split(out, "\n")
+		Expect(lines[0]).To(ContainSubstring("iss"))
+	})
+
+	It("renders all IssueCell states correctly", func() {
+		out := renderSummary(false)
+		// IssueTracked with Untriaged -> "7 ⚑3"
+		Expect(out).To(ContainSubstring("7 ⚑3"))
+		// IssueUntracked -> "-"
+		// IssueUnknown -> "?"
+		// IssueTracked+Capped -> "100+"
+		Expect(out).To(ContainSubstring("100+"))
 	})
 
 	It("emits byte-identical output under forced color and NO_COLOR (no leak)", func() {

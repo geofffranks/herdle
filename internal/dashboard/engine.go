@@ -45,6 +45,24 @@ type TKCell struct {
 	Ready      int
 }
 
+// IssueState classifies the summary iss cell.
+type IssueState int
+
+const (
+	IssueUntracked IssueState = iota // fork / no forge / no slug -> "-"
+	IssueUnknown                     // slug present, IssueList failed -> "?"
+	IssueTracked                     // listed -> Open/Untriaged counts
+)
+
+// IssueCell is the summary iss cell: open count + un-triaged sub-count, mirroring
+// the two-part merge cell. Capped is true when the fetch hit IssueFetchLimit.
+type IssueCell struct {
+	State     IssueState
+	Open      int
+	Untriaged int
+	Capped    bool
+}
+
 // SummaryRow is one project's row in the cross-project summary.
 type SummaryRow struct {
 	Name     string
@@ -52,6 +70,7 @@ type SummaryRow struct {
 	PR       PRCell
 	TK       TKCell
 	Problems int // count of flagged conditions in this repo's drilldown (excl. merge attention)
+	Issues   IssueCell
 }
 
 // SummaryResult is the cross-project summary plus run-wide degradation state.

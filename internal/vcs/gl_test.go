@@ -140,6 +140,36 @@ echo '[]'
 	})
 })
 
+var _ = Describe("GLRunner.IssueList", func() {
+	var gl vcs.GLRunner
+	BeforeEach(func() { gl = vcs.NewGLRunner() })
+
+	It("maps GitLab iid/state onto the neutral Issue", func() {
+		glabStub(`#!/bin/sh
+echo '[{"iid":42,"title":"Broken export","state":"opened"}]'
+`)
+		issues, err := gl.IssueList("grp/proj", "open")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(issues).To(Equal([]vcs.Issue{{Number: 42, Title: "Broken export", State: "OPEN"}}))
+	})
+
+	It("maps a closed GitLab state to CLOSED", func() {
+		glabStub(`#!/bin/sh
+echo '[{"iid":7,"title":"Old bug","state":"closed"}]'
+`)
+		issues, err := gl.IssueList("grp/proj", "all")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(issues).To(Equal([]vcs.Issue{{Number: 7, Title: "Old bug", State: "CLOSED"}}))
+	})
+
+	It("treats an empty array as zero issues (no error)", func() {
+		glabStub("#!/bin/sh\necho '[]'\n")
+		issues, err := gl.IssueList("grp/proj", "open")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(issues).To(BeEmpty())
+	})
+})
+
 var _ = Describe("GLRunner.Available / Authenticated", func() {
 	It("Available is true when HERDLE_GLAB points at an existing binary", func() {
 		glabStub("#!/bin/sh\nexit 0\n")

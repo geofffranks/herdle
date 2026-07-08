@@ -28,6 +28,20 @@ type FakeGLRunner struct {
 	availableReturnsOnCall map[int]struct {
 		result1 bool
 	}
+	IssueListStub        func(string, string) ([]vcs.Issue, error)
+	issueListMutex       sync.RWMutex
+	issueListArgsForCall []struct {
+		arg1 string
+		arg2 string
+	}
+	issueListReturns struct {
+		result1 []vcs.Issue
+		result2 error
+	}
+	issueListReturnsOnCall map[int]struct {
+		result1 []vcs.Issue
+		result2 error
+	}
 	KnownHostsStub        func() []string
 	knownHostsMutex       sync.RWMutex
 	knownHostsArgsForCall []struct {
@@ -160,6 +174,71 @@ func (fake *FakeGLRunner) AvailableReturnsOnCall(i int, result1 bool) {
 	fake.availableReturnsOnCall[i] = struct {
 		result1 bool
 	}{result1}
+}
+
+func (fake *FakeGLRunner) IssueList(arg1 string, arg2 string) ([]vcs.Issue, error) {
+	fake.issueListMutex.Lock()
+	ret, specificReturn := fake.issueListReturnsOnCall[len(fake.issueListArgsForCall)]
+	fake.issueListArgsForCall = append(fake.issueListArgsForCall, struct {
+		arg1 string
+		arg2 string
+	}{arg1, arg2})
+	stub := fake.IssueListStub
+	fakeReturns := fake.issueListReturns
+	fake.recordInvocation("IssueList", []interface{}{arg1, arg2})
+	fake.issueListMutex.Unlock()
+	if stub != nil {
+		return stub(arg1, arg2)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeGLRunner) IssueListCallCount() int {
+	fake.issueListMutex.RLock()
+	defer fake.issueListMutex.RUnlock()
+	return len(fake.issueListArgsForCall)
+}
+
+func (fake *FakeGLRunner) IssueListCalls(stub func(string, string) ([]vcs.Issue, error)) {
+	fake.issueListMutex.Lock()
+	defer fake.issueListMutex.Unlock()
+	fake.IssueListStub = stub
+}
+
+func (fake *FakeGLRunner) IssueListArgsForCall(i int) (string, string) {
+	fake.issueListMutex.RLock()
+	defer fake.issueListMutex.RUnlock()
+	argsForCall := fake.issueListArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2
+}
+
+func (fake *FakeGLRunner) IssueListReturns(result1 []vcs.Issue, result2 error) {
+	fake.issueListMutex.Lock()
+	defer fake.issueListMutex.Unlock()
+	fake.IssueListStub = nil
+	fake.issueListReturns = struct {
+		result1 []vcs.Issue
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeGLRunner) IssueListReturnsOnCall(i int, result1 []vcs.Issue, result2 error) {
+	fake.issueListMutex.Lock()
+	defer fake.issueListMutex.Unlock()
+	fake.IssueListStub = nil
+	if fake.issueListReturnsOnCall == nil {
+		fake.issueListReturnsOnCall = make(map[int]struct {
+			result1 []vcs.Issue
+			result2 error
+		})
+	}
+	fake.issueListReturnsOnCall[i] = struct {
+		result1 []vcs.Issue
+		result2 error
+	}{result1, result2}
 }
 
 func (fake *FakeGLRunner) KnownHosts() []string {

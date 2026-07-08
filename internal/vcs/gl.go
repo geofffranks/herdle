@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type glRunner struct{}
@@ -114,6 +115,39 @@ func (r glRunner) PRList(slug, state string) ([]PR, error) {
 		prs[i] = m.toPR()
 	}
 	return prs, nil
+}
+
+// glIssue is the subset of a `glab issue list -F json` element herdle consumes.
+type glIssue struct {
+	IID   int    `json:"iid"`
+	Title string `json:"title"`
+	State string `json:"state"` // opened | closed
+}
+
+func (i glIssue) toIssue() Issue {
+	state := "OPEN"
+	if i.State == "closed" {
+		state = "CLOSED"
+	}
+	return Issue{Number: i.IID, Title: i.Title, State: state}
+}
+
+func (r glRunner) IssueList(slug, state string) ([]Issue, error) {
+	args := []string{"issue", "list", "-R", slug, "-F", "json", "--per-page", strconv.Itoa(IssueFetchLimit)}
+	if state == "all" {
+		args = append(args, "--all") // else glab lists open by default (what we want)
+	}
+	raw, err := retryJSONFetch[glIssue](fmt.Sprintf("glab issue list -R %s", slug), func() (result, error) {
+		return r.glab(args...)
+	})
+	if err != nil {
+		return nil, err
+	}
+	issues := make([]Issue, len(raw))
+	for i, gi := range raw {
+		issues[i] = gi.toIssue()
+	}
+	return issues, nil
 }
 
 // Available reports whether the glab binary can be located (HERDLE_GLAB override,

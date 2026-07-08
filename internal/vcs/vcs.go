@@ -18,6 +18,18 @@ type Branch struct {
 	UpstreamGone bool
 }
 
+// Issue is an open forge issue as reported by `gh issue list` / `glab issue list`.
+// GitLab's iid is mapped onto Number in gl.go.
+type Issue struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"` // OPEN | CLOSED (we request open only)
+}
+
+// IssueFetchLimit bounds an IssueList page. A full page renders a "+"-suffixed
+// count and a "(showing first N)" note, so a busy repo is never silently truncated.
+const IssueFetchLimit = 100
+
 // PR is an authored pull request as reported by `gh pr list --json`.
 type PR struct {
 	Number      int    `json:"number"`
@@ -96,6 +108,10 @@ type GHRunner interface {
 	// ("open" | "all"). slug is gh's [HOST/]OWNER/REPO. The impl retries once and
 	// validates a JSON-array shape before trusting an empty result.
 	PRList(slug, state string) ([]PR, error)
+	// IssueList returns the open issues for slug (no author filter — inbound work on
+	// a repo the user owns), normalized to Issue. Same retry/JSON-array guard as
+	// PRList. state is "open" | "all"; herdle only requests "open".
+	IssueList(slug, state string) ([]Issue, error)
 	// Available reports whether the gh binary can be located (HERDLE_GH override,
 	// else PATH). It does not check auth — that is herdle doctor's job (S8).
 	Available() bool
@@ -122,6 +138,10 @@ type GLRunner interface {
 	// full https URL for a self-hosted host. The impl retries once and validates a
 	// JSON-array shape before trusting an empty result.
 	PRList(slug, state string) ([]PR, error)
+	// IssueList returns the open issues for slug (no author filter — inbound work on
+	// a repo the user owns), normalized to Issue. Same retry/JSON-array guard as
+	// PRList. state is "open" | "all"; herdle only requests "open".
+	IssueList(slug, state string) ([]Issue, error)
 	// Available reports whether the glab binary can be located (HERDLE_GLAB
 	// override, else PATH). It does not check auth — see Authenticated.
 	Available() bool

@@ -348,6 +348,53 @@ var _ = Describe("Engine.Drilldown", func() {
 		Expect(slug).To(Equal("github.example.com/o/r"))
 		Expect(state).To(Equal("all"))
 	})
+
+	Context("open issue gather", func() {
+		var (
+			resolvedTrackIssues config.Resolved
+			resolvedForked      config.Resolved
+		)
+		BeforeEach(func() {
+			resolvedTrackIssues = config.Resolved{
+				Path:         "/r",
+				Slug:         "o/r",
+				SlugExplicit: true,
+				RemoteHost:   "github.com",
+				TrackIssues:  true,
+			}
+			resolvedForked = config.Resolved{
+				Path:         "/r",
+				Slug:         "o/r",
+				SlugExplicit: true,
+				RemoteHost:   "github.com",
+				TrackIssues:  false,
+			}
+			// ticket her-x2b tracks issue #59 via ExternalRef "gh-59"
+			tk.TicketsReturns([]vcs.Ticket{
+				{ID: "her-x2b", Status: "open", ExternalRef: "gh-59"},
+			}, nil)
+		})
+
+		It("lists open issues with untriaged first and triaged tk correlation", func() {
+			gh.IssueListReturns([]vcs.Issue{
+				{Number: 59, Title: "Tracked", State: "OPEN"},
+				{Number: 61, Title: "Untriaged", State: "OPEN"},
+			}, nil)
+			d, _ := eng.Drilldown(resolvedTrackIssues, false)
+			Expect(d.TrackIssues).To(BeTrue())
+			Expect(d.OpenIssues).To(Equal([]dashboard.IssueRow{
+				{Number: 61, Title: "Untriaged", Untriaged: true},
+				{Number: 59, Title: "Tracked", TKs: []string{"her-x2b"}},
+			}))
+		})
+
+		It("gathers no issues for a fork (TrackIssues false)", func() {
+			d, _ := eng.Drilldown(resolvedForked, false)
+			Expect(d.TrackIssues).To(BeFalse())
+			Expect(d.OpenIssues).To(BeEmpty())
+			Expect(gh.IssueListCallCount()).To(BeZero())
+		})
+	})
 })
 
 type dashboardWIP struct{ tkid, lc, problem string }

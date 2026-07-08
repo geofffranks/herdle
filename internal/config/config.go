@@ -28,6 +28,9 @@ type Project struct {
 	// config re-saves as `slug =`. Kept only so a stale `gh =` does not silently lose
 	// PR correlation. Always GitHub (the legacy key predates GitLab support).
 	GH string `toml:"gh,omitempty"`
+	// Issues overrides source-of-truth issue tracking: nil autodetects (source ⟺ no
+	// upstream remote), true forces on, false forces off. Hand-set in config.toml.
+	Issues *bool `toml:"issues,omitempty"`
 }
 
 // foldLegacyGH migrates a legacy `gh =` slug into the forge-agnostic Slug, in
@@ -67,4 +70,7 @@ type Resolved struct {
 	// still chosen by RemoteHost, so an explicit slug with no resolvable host
 	// degrades rather than guessing a forge.
 	SlugExplicit bool
+	// TrackIssues is whether forge issues are listed for this repo. True for a
+	// source-of-truth repo (no upstream remote) unless Project.Issues overrides.
+	TrackIssues bool
 }

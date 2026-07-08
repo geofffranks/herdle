@@ -19,6 +19,7 @@ const (
 	colPRs      = 4
 	colMerge    = 7 // fits "✗N ✓M"
 	colProblems = 8 // fits "problems"
+	colIssues   = 3 // fits "iss"
 )
 
 // Summary writes the cross-project summary layout for rows to w. The view is
@@ -36,38 +37,42 @@ func Summary(w io.Writer, rows []dashboard.SummaryRow, fetched bool, absentForge
 	out := &errWriter{w: w}
 
 	// Render every cell up front so the widths can be measured before emitting.
-	type cells struct{ project, branch, prs, merge, problems, tk string }
+	type cells struct{ project, branch, prs, merge, problems, tk, issues string }
 	body := make([]cells, len(rows))
 	wp, wb, wpr, wm, wprob := colProject, colBranch, colPRs, colMerge, colProblems
+	wtk, wiss := len("tk(ip/ready)"), colIssues
 	for i, r := range rows {
-		c := cells{r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), problemsCell(r.Problems), tkCell(r.TK)}
+		c := cells{r.Name, headString(r.Head), prCell(r.PR), mergeCell(r.PR), problemsCell(r.Problems), tkCell(r.TK), issuesCell(r.Issues)}
 		body[i] = c
 		wp = max(wp, dispWidth(c.project))
 		wb = max(wb, dispWidth(c.branch))
 		wpr = max(wpr, dispWidth(c.prs))
 		wm = max(wm, dispWidth(c.merge))
 		wprob = max(wprob, dispWidth(c.problems))
+		wtk = max(wtk, dispWidth(c.tk))
+		wiss = max(wiss, dispWidth(c.issues))
 	}
 
-	emit := func(project, branch, prs, merge, problems, tk string) {
+	emit := func(project, branch, prs, merge, problems, tk, issues string) {
 		out.line(padRightWidth(project, wp) + " " +
 			padRightWidth(branch, wb) + " " +
 			padLeftWidth(prs, wpr) + "  " +
 			padRightWidth(merge, wm) + " " +
-			padLeftWidth(problems, wprob) + "  " + tk)
+			padLeftWidth(problems, wprob) + "  " +
+			padRightWidth(tk, wtk) + " " + issues)
 	}
 	dashes := func(s string) string { return strings.Repeat("-", dispWidth(s)) }
 
-	emit("PROJECT", "BRANCH", "PRs", "merge", "problems", "tk(ip/ready)")
-	emit(dashes("PROJECT"), dashes("BRANCH"), dashes("PRs"), dashes("merge"), dashes("problems"), dashes("tk(ip/ready)"))
+	emit("PROJECT", "BRANCH", "PRs", "merge", "problems", "tk(ip/ready)", "iss")
+	emit(dashes("PROJECT"), dashes("BRANCH"), dashes("PRs"), dashes("merge"), dashes("problems"), dashes("tk(ip/ready)"), dashes("iss"))
 	for _, c := range body {
-		emit(c.project, c.branch, c.prs, c.merge, c.problems, c.tk)
+		emit(c.project, c.branch, c.prs, c.merge, c.problems, c.tk, c.issues)
 	}
 	note := "cached — herdle --fetch to refresh"
 	if fetched {
 		note = "fetched"
 	}
-	footer := "(" + note + `)  tk = in-progress/ready · problems = local/cleanup problems · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge`
+	footer := "(" + note + `)  tk = in-progress/ready · problems = local/cleanup problems · iss = open · ⚑untriaged (source-of-truth repos only) · run "herdle <name>" for detail · merge: ✗ need attention / ✓ ready to merge`
 	if len(absentForges) > 0 {
 		footer += " · " + strings.Join(absentForges, "/") + " not found — PR/MR counts hidden"
 	}
@@ -146,6 +151,27 @@ func tkCell(t dashboard.TKCell) string {
 		return "-"
 	}
 	return strconv.Itoa(t.InProgress) + "/" + strconv.Itoa(t.Ready)
+}
+
+// issuesCell renders the summary iss cell: "-" untracked (fork/no forge), "?" on
+// forge error, else the open count ("+"-suffixed when capped) with a " ⚑N"
+// un-triaged sub-count when any are un-triaged.
+func issuesCell(c dashboard.IssueCell) string {
+	switch c.State {
+	case dashboard.IssueUntracked:
+		return "-"
+	case dashboard.IssueUnknown:
+		return "?"
+	default:
+		s := strconv.Itoa(c.Open)
+		if c.Capped {
+			s += "+"
+		}
+		if c.Untriaged > 0 {
+			s += " ⚑" + strconv.Itoa(c.Untriaged)
+		}
+		return s
+	}
 }
 
 // errWriter collects the first write error so Summary need not check every line.

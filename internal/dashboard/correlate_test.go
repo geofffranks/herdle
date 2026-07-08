@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -110,6 +112,69 @@ var _ = Describe("correlation helpers", func() {
 			tickets := []dticket{dl("a", "gh-5", "pending-validation"), dl("b", "gh-5", "?")}
 			text, _ := prTKIssue(tickets, 5, "feat")
 			Expect(text).To(Equal("tk a pending-validation, tk b unvalidated (?)"))
+		})
+	})
+
+	Describe("issueTKs / issueTriaged", func() {
+		It("triages an issue when a tk external-ref resolves to its number", func() {
+			tks := []dticket{{Ticket: vcs.Ticket{ID: "her-x2b", ExternalRef: "gh-59"}}}
+			Expect(issueTriaged(tks, 59)).To(BeTrue())
+			Expect(issueTKs(tks, 59)).To(Equal([]string{"her-x2b"}))
+		})
+		It("triages via an explicit /issues/ URL ref", func() {
+			tks := []dticket{{Ticket: vcs.Ticket{ID: "her-x2b", ExternalRef: "https://github.com/o/r/issues/59"}}}
+			Expect(issueTriaged(tks, 59)).To(BeTrue())
+		})
+		It("does NOT triage issue #59 from a /pull/59 ref (that ref is a PR)", func() {
+			tks := []dticket{{Ticket: vcs.Ticket{ID: "her-x2b", ExternalRef: "https://github.com/o/r/pull/59"}}}
+			Expect(issueTriaged(tks, 59)).To(BeFalse())
+		})
+		It("reports an un-triaged issue when no ref matches", func() {
+			tks := []dticket{{Ticket: vcs.Ticket{ID: "her-x2b", ExternalRef: "gh-12"}}}
+			Expect(issueTriaged(tks, 59)).To(BeFalse())
+			Expect(issueTKs(tks, 59)).To(BeNil())
+		})
+	})
+
+	Describe("issueRows collapse", func() {
+		// build n triaged issues (#1..#n, each tracked by a gh-N ticket) plus one
+		// un-triaged issue (#99).
+		build := func(n int) ([]vcs.Issue, []dticket) {
+			var issues []vcs.Issue
+			var tks []dticket
+			for i := 1; i <= n; i++ {
+				issues = append(issues, vcs.Issue{Number: i, State: "OPEN"})
+				tks = append(tks, dticket{Ticket: vcs.Ticket{ID: fmt.Sprintf("tk-%d", i), ExternalRef: fmt.Sprintf("gh-%d", i)}})
+			}
+			issues = append(issues, vcs.Issue{Number: 99, State: "OPEN"})
+			return issues, tks
+		}
+
+		It("lists untriaged first, then the first triagedListLimit triaged, collapsing only the excess", func() {
+			issues, tks := build(triagedListLimit + 1) // 11 triaged
+			rows, hidden, capped := issueRows(issues, tks)
+			Expect(capped).To(BeFalse())
+			Expect(hidden).To(Equal(1)) // 11 triaged - 10 limit = 1 collapsed
+			Expect(rows[0].Number).To(Equal(99))
+			Expect(rows[0].Untriaged).To(BeTrue())
+			triagedShown := rows[1:]
+			Expect(triagedShown).To(HaveLen(triagedListLimit))
+			for i, r := range triagedShown {
+				Expect(r.Untriaged).To(BeFalse())
+				Expect(r.TKs).NotTo(BeEmpty())
+				Expect(r.Number).To(Equal(i + 1)) // the FIRST triagedListLimit (#1..#10), in order — pins against an off-by-one slice
+			}
+			// the (triagedListLimit+1)-th triaged issue (#11) is the collapsed one, not shown
+			for _, r := range rows {
+				Expect(r.Number).NotTo(Equal(triagedListLimit + 1))
+			}
+		})
+
+		It("lists all triaged individually at the limit (no collapse)", func() {
+			issues, tks := build(triagedListLimit) // 10 triaged
+			rows, hidden, _ := issueRows(issues, tks)
+			Expect(hidden).To(BeZero())
+			Expect(rows).To(HaveLen(triagedListLimit + 1)) // 10 triaged + 1 untriaged
 		})
 	})
 

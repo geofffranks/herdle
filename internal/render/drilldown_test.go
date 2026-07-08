@@ -101,6 +101,84 @@ var _ = Describe("render.Drilldown", func() {
 	It("omits the gh-not-found legend when gh is available", func() {
 		Expect(renderDrilldown(false)).NotTo(ContainSubstring("gh: not found"))
 	})
+
+	// open-issues section tests (Task 7)
+	Describe("open issues", func() {
+		var issuesDrilldown dashboard.Drilldown
+
+		BeforeEach(func() {
+			issuesDrilldown = dashboard.Drilldown{
+				Name: "herdle", Path: "/home/u/herdle",
+				Head:        dashboard.HeadInfo{Branch: "main"},
+				TrackIssues: true,
+				OpenIssues: []dashboard.IssueRow{
+					{Number: 61, Title: "crash on startup", Untriaged: true},
+					{Number: 59, Title: "docs are outdated", TKs: []string{"her-x2b"}},
+				},
+			}
+		})
+
+		It("renders — open issues — header with untriaged row before triaged row", func() {
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			out := buf.String()
+			Expect(out).To(ContainSubstring("— open issues —"))
+			Expect(out).To(ContainSubstring("⚑ untriaged"))
+			Expect(out).To(ContainSubstring("[her-x2b]"))
+			// untriaged (#61) must appear before triaged (#59)
+			Expect(out).To(MatchRegexp(`(?s)#61.*#59`))
+		})
+
+		It("shows issues legend line", func() {
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			out := buf.String()
+			Expect(out).To(ContainSubstring("⚑ untriaged"))
+			Expect(out).To(ContainSubstring("source-of-truth repos only"))
+		})
+
+		It("hides open-issues section when TrackIssues is false", func() {
+			issuesDrilldown.TrackIssues = false
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			Expect(buf.String()).NotTo(ContainSubstring("— open issues —"))
+		})
+
+		It("shows (gh unavailable) when IssuesUnavailable", func() {
+			issuesDrilldown.IssuesUnavailable = true
+			issuesDrilldown.OpenIssues = nil
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			out := buf.String()
+			Expect(out).To(ContainSubstring("— open issues —"))
+			Expect(out).To(ContainSubstring("(gh unavailable)"))
+		})
+
+		It("uses glab when forge is gitlab and IssuesUnavailable", func() {
+			issuesDrilldown.Forge = "gitlab"
+			issuesDrilldown.IssuesUnavailable = true
+			issuesDrilldown.OpenIssues = nil
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			out := buf.String()
+			Expect(out).To(ContainSubstring("(glab unavailable)"))
+			Expect(out).NotTo(ContainSubstring("(gh unavailable)"))
+		})
+
+		It("shows 'showing first 100' cap note when IssuesCapped", func() {
+			issuesDrilldown.IssuesCapped = true
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			out := buf.String()
+			Expect(out).To(ContainSubstring("showing first 100"))
+		})
+
+		It("omits cap note when not IssuesCapped", func() {
+			var buf bytes.Buffer
+			Expect(render.Drilldown(&buf, issuesDrilldown, false)).To(Succeed())
+			Expect(buf.String()).NotTo(ContainSubstring("showing first"))
+		})
+	})
 })
 
 // stripANSI removes CSI sequences for the color-parity assertion.

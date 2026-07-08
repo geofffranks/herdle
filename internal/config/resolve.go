@@ -81,6 +81,23 @@ func (c *Config) Resolve(p Project, git vcs.GitRunner) (Resolved, error) {
 		}
 	}
 
+	// TrackIssues: forge issues are listed only for source-of-truth repos. The fork
+	// convention names the canonical repo "upstream", so its presence is the fork
+	// signal — a local check, no forge round-trip. An explicit issues= override wins
+	// and short-circuits the upstream probe, so a project pinned with issues= pays no
+	// extra git call.
+	if p.Issues != nil {
+		r.TrackIssues = *p.Issues
+	} else {
+		hasUpstream := r.Remote == "upstream" // already resolved to it => it exists
+		if !hasUpstream {
+			if _, err := git.RemoteURL(p.Path, "upstream"); err == nil {
+				hasUpstream = true
+			}
+		}
+		r.TrackIssues = !hasUpstream
+	}
+
 	return r, nil
 }
 

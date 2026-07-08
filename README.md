@@ -17,8 +17,8 @@ herdle is a self-contained Go binary that gives you a cross-project, tk-driven w
 | `git` | Required — all repo introspection goes through git |
 | `tk` ([wedow/ticket](https://github.com/wedow/ticket)) | Required — herdle reads ticket state and metadata |
 | superpowers plugin | Required — installed skills depend on it |
-| `gh` (authenticated) + GitHub remote | Optional — enables PR correlation, issue links, and GitHub-aware features |
-| `glab` (authenticated) + GitLab remote | Optional — enables MR correlation for gitlab.com and self-hosted GitLab (`glab auth login --hostname <host>` per instance) |
+| `gh` (authenticated) + GitHub remote | Optional — enables PR correlation and open-issue listing for source-of-truth GitHub repos |
+| `glab` (authenticated) + GitLab remote | Optional — enables MR correlation and open-issue listing for source-of-truth GitLab repos (gitlab.com and self-hosted; `glab auth login --hostname <host>` per instance) |
 
 See [docs/install.md](docs/install.md) for the full dependency contract and installation instructions.
 

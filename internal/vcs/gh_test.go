@@ -104,6 +104,33 @@ echo '[]'
 	})
 })
 
+var _ = Describe("GHRunner.IssueList", func() {
+	var gh vcs.GHRunner
+	BeforeEach(func() { gh = vcs.NewGHRunner() })
+
+	It("parses a JSON array of issues", func() {
+		ghStub(`#!/bin/sh
+echo '[{"number":59,"title":"Crash on load","state":"OPEN"}]'
+`)
+		issues, err := gh.IssueList("o/r", "open")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(issues).To(Equal([]vcs.Issue{{Number: 59, Title: "Crash on load", State: "OPEN"}}))
+	})
+
+	It("treats an empty array as zero issues (no error)", func() {
+		ghStub("#!/bin/sh\necho '[]'\n")
+		issues, err := gh.IssueList("o/r", "open")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(issues).To(BeEmpty())
+	})
+
+	It("errors (never empty) when gh fails both attempts", func() {
+		ghStub("#!/bin/sh\necho boom >&2\nexit 1\n")
+		_, err := gh.IssueList("o/r", "open")
+		Expect(err).To(HaveOccurred())
+	})
+})
+
 var _ = Describe("GHRunner.Available", func() {
 	It("is true when HERDLE_GH points at an existing binary", func() {
 		ghStub("#!/bin/sh\nexit 0\n")

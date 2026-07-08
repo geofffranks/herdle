@@ -12,6 +12,7 @@ import (
 // is forge-neutral once a project has been routed to one of them.
 type forgeClient interface {
 	PRList(slug, state string) ([]vcs.PR, error)
+	IssueList(slug, state string) ([]vcs.Issue, error)
 	Available() bool
 }
 

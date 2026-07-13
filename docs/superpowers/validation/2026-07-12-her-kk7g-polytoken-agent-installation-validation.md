@@ -24,5 +24,5 @@ Review fix commit: a74913f.
 
 ## Human
 
-- [ ] Start/reload a Polytoken session and confirm the Herdle context is visible
-- [ ] Attempt each lifecycle transition and confirm the displayed denial/remediation is clear
+- [x] Start/reload a Polytoken session and confirm the Herdle context is visible
+- [x] Attempt each lifecycle transition and confirm the displayed denial/remediation is clear

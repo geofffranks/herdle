@@ -1,6 +1,6 @@
 ---
 id: her-kk7g
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-07-13T01:10:06Z
@@ -10,7 +10,7 @@ assignee: Geoff Franks
 spec: docs/superpowers/specs/2026-07-12-her-kk7g-polytoken-agent-installation-design.md
 plan: docs/superpowers/plans/2026-07-12-her-kk7g-polytoken-agent-installation.md
 branch: feature/her-kk7g-polytoken
-lifecycle: pending-validation
+lifecycle: validated
 ---
 # Add Polytoken agent installation support
 

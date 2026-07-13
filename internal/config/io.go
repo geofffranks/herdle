@@ -28,6 +28,16 @@ func ClaudeDir() (string, error) {
 	return baseDir("CLAUDE_CONFIG_DIR", ".claude")
 }
 
+// PolytokenDir returns the Polytoken base config directory:
+// ${XDG_CONFIG_HOME:-$HOME/.config}/polytoken.
+func PolytokenDir() (string, error) {
+	base, err := baseDir("XDG_CONFIG_HOME", ".config")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "polytoken"), nil
+}
+
 // SettingsPath returns the Claude Code settings file: <ClaudeDir>/settings.json.
 func SettingsPath() (string, error) {
 	dir, err := ClaudeDir()

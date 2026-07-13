@@ -11,23 +11,49 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/urfave/cli/v2"
 
+	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/gate"
 )
 
+func init() {
+	// --agent is an internal hook-protocol selector, not user-facing CLI surface.
+	// The docs drift guard's registry predates hidden flags and does not inspect
+	// cli.Flag.IsVisible, so classify this hidden protocol flag with its builtins.
+	docsBuiltinFlags["--agent"] = true
+}
+
 var _ = Describe("hookCommand", func() {
-	It("keeps code-review-gate as an alias of gatekeeper (upgrade migration window)", func() {
-		var gk *cli.Command
+	gatekeeper := func() *cli.Command {
 		for _, c := range hookCommand().Subcommands {
 			if c.Name == "gatekeeper" {
-				gk = c
+				return c
 			}
 		}
+		return nil
+	}
+
+	It("keeps code-review-gate as an alias of gatekeeper (upgrade migration window)", func() {
+		gk := gatekeeper()
 		Expect(gk).NotTo(BeNil())
 		Expect(gk.Aliases).To(ContainElement("code-review-gate"))
 	})
+
+	It("keeps the hook agent selector hidden and defaults it to Claude", func() {
+		gk := gatekeeper()
+		Expect(gk).NotTo(BeNil())
+		Expect(gk.Flags).To(HaveLen(1))
+		flag, ok := gk.Flags[0].(*cli.StringFlag)
+		Expect(ok).To(BeTrue())
+		Expect(flag.Name).To(Equal("agent"))
+		Expect(flag.Hidden).To(BeTrue())
+		Expect(flag.Value).To(Equal(string(agent.Claude)))
+	})
 })
 
-var _ = Describe("runGatekeeper", func() {
+var _ = Describe("runGatekeeper Claude compatibility", func() {
+	runGatekeeper := func(r io.Reader) gate.Decision {
+		return runGatekeeper(r, agent.Claude, "")
+	}
 	writeTranscript := func(lines ...string) string {
 		dir := GinkgoT().TempDir()
 		p := filepath.Join(dir, "transcript.jsonl")
@@ -155,5 +181,133 @@ var _ = Describe("runGatekeeper", func() {
 			repo, ticket := writeTicket("---\nid: her-x\nbranch: feat/her-x\n---\n")
 			Expect(run(repo, ticket, "lifecycle: in-development\n").Allow).To(BeTrue())
 		})
+	})
+})
+
+var _ = Describe("runGatekeeper Polytoken", func() {
+	const completeReview = "## Herdle code review\n\n" +
+		"- [x] Standard review completed\n" +
+		"- [x] Standard review findings addressed\n" +
+		"- [x] Deep review completed\n" +
+		"- [x] Deep review findings addressed\n"
+
+	writeProject := func(lifecycle, review string) string {
+		root := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(root, ".tickets"), 0o750)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(root, ".tickets", "her-x.md"),
+			[]byte("---\nid: her-x\nlifecycle: "+lifecycle+"\nbranch: feat/x\n---\n"), 0o600)).To(Succeed())
+		if review != "" {
+			dir := filepath.Join(root, "docs", "superpowers", "validation")
+			Expect(os.MkdirAll(dir, 0o750)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(dir, "2026-06-22-her-x-validation.md"), []byte(review), 0o600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(dir, "2026-06-22-her-other-validation.md"), []byte(completeReview), 0o600)).To(Succeed())
+		}
+		return root
+	}
+
+	DescribeTable("normalizes native tools and resolves relative ticket paths from projectDir",
+		func(payload string) {
+			root := writeProject("in-development", completeReview)
+			d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+			Expect(d.Allow).To(BeTrue(), d.Reason)
+		},
+		Entry("file_edit_search_replace", `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`),
+		Entry("file_write", `{"tool_name":"file_write","input":{"path":".tickets/her-x.md","content":"lifecycle: pending-validation\n"}}`),
+		Entry("shell_exec", `{"tool_name":"shell_exec","input":{"command":"sed -i '' 's/^lifecycle:.*/lifecycle: pending-validation/' .tickets/her-x.md"}}`),
+	)
+
+	It("blocks pending-validation when a correlated marker is missing", func() {
+		root := writeProject("in-development", strings.Replace(completeReview, "- [x] Deep review findings addressed\n", "", 1))
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+		Expect(d.Allow).To(BeFalse())
+		Expect(d.Missing).To(Equal([]string{"deep-addressed"}))
+	})
+
+	It("accepts required markers split across multiple correlated docs", func() {
+		root := writeProject("in-development", "")
+		dir := filepath.Join(root, "docs", "superpowers", "validation")
+		Expect(os.MkdirAll(dir, 0o750)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "a-her-x.md"), []byte("- [x] Standard review completed\n- [x] Standard review findings addressed\n"), 0o600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "b-her-x.md"), []byte("- [x] Deep review completed\n- [x] Deep review findings addressed\n"), 0o600)).To(Succeed())
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeTrue())
+	})
+
+	It("rejects a marker duplicated across correlated docs", func() {
+		root := writeProject("in-development", completeReview)
+		dir := filepath.Join(root, "docs", "superpowers", "validation")
+		Expect(os.WriteFile(filepath.Join(dir, "duplicate-her-x.md"), []byte("- [x] Standard review completed\n"), 0o600)).To(Succeed())
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+		Expect(d.Allow).To(BeFalse())
+		Expect(d.Missing).To(ContainElement("standard-completed"))
+	})
+
+	It("fails closed when any correlated doc is unreadable even if another is complete", func() {
+		root := writeProject("in-development", completeReview)
+		dir := filepath.Join(root, "docs", "superpowers", "validation", "unreadable-her-x.md")
+		Expect(os.MkdirAll(dir, 0o750)).To(Succeed())
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+		Expect(d.Allow).To(BeFalse())
+		Expect(d.Reason).To(ContainSubstring("cannot read the ticket-correlated validation doc"))
+	})
+
+	Describe("validated transition validation-doc readability", func() {
+		const payload = `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: validated\n"}}`
+
+		It("allows a readable complete correlated doc", func() {
+			root := writeProject("pending-validation", "- [x] acceptance complete\n")
+			Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeTrue())
+		})
+
+		It("denies an unreadable-only correlated match", func() {
+			root := writeProject("pending-validation", "")
+			unreadable := filepath.Join(root, "docs", "superpowers", "validation", "unreadable-her-x.md")
+			Expect(os.MkdirAll(unreadable, 0o750)).To(Succeed())
+			Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeFalse())
+		})
+
+		It("denies mixed readable and unreadable correlated matches", func() {
+			root := writeProject("pending-validation", "- [x] acceptance complete\n")
+			unreadable := filepath.Join(root, "docs", "superpowers", "validation", "unreadable-her-x.md")
+			Expect(os.MkdirAll(unreadable, 0o750)).To(Succeed())
+			Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeFalse())
+		})
+	})
+
+	It("fails open for malformed payloads and irrelevant tools", func() {
+		Expect(runGatekeeper(strings.NewReader("not json"), agent.Polytoken, "/repo").Allow).To(BeTrue())
+		payload := `{"tool_name":"file_read","input":{"path":".tickets/her-x.md"}}`
+		Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, "/repo").Allow).To(BeTrue())
+	})
+
+	It("fails open for an unknown harness", func() {
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		Expect(runGatekeeper(strings.NewReader(payload), agent.Name("unknown"), "/repo").Allow).To(BeTrue())
+	})
+
+	It("classifies but marks a relative Polytoken ticket unreadable when projectDir is empty", func() {
+		path, readable := resolvePolytokenTicketPath(".tickets/her-empty-root.md", "")
+		Expect(path).To(Equal(filepath.Join(string(filepath.Separator), ".tickets", "her-empty-root.md")))
+		Expect(readable).To(BeFalse())
+	})
+
+	It("fails closed after recognizing a relative ticket when projectDir is empty", func() {
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-empty-root.md","new_string":"lifecycle: pending-validation\n"}}`
+		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, "")
+		Expect(d.Allow).To(BeFalse())
+		Expect(d.Missing).To(Equal([]string{"standard-completed", "standard-addressed", "deep-completed", "deep-addressed"}))
+	})
+
+	It("keeps rollback and override semantics", func() {
+		root := writeProject("validated", "")
+		rollback := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		Expect(runGatekeeper(strings.NewReader(rollback), agent.Polytoken, root).Allow).To(BeTrue())
+
+		root = writeProject("in-development", "")
+		override := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n[skip-code-review-gate] emergency\n"}}`
+		Expect(runGatekeeper(strings.NewReader(override), agent.Polytoken, root).Allow).To(BeTrue())
 	})
 })

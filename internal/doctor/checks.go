@@ -126,21 +126,31 @@ func sameFile(a, b string) bool {
 	return os.SameFile(ai, bi)
 }
 
-func checkIntegrity(env Env) Result {
-	const name = "skills + rule"
+func checkClaudeIntegrity(env Env) Result {
+	assets := env.ClaudeAssets
+	if assets == nil {
+		assets = env.Assets
+	}
+	return checkIntegrity(assets, env.ClaudeDir, "claude: skills + rule", "run: herdle init", "refresh after an upgrade: herdle init --force")
+}
+
+func checkIntegrity(assets fs.FS, dir, name, missingRemediation, driftRemediation string) Result {
+	if assets == nil {
+		return Result{Name: name, Status: Fail, Detail: "asset filesystem is unavailable", Remediation: missingRemediation}
+	}
 	var missing, drifted []string
-	err := fs.WalkDir(env.Assets, ".", func(p string, d fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(assets, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if d.IsDir() {
 			return nil
 		}
-		want, readErr := fs.ReadFile(env.Assets, p)
+		want, readErr := fs.ReadFile(assets, p)
 		if readErr != nil {
 			return readErr
 		}
-		dest := filepath.Join(env.ClaudeDir, filepath.FromSlash(p))
+		dest := filepath.Join(dir, filepath.FromSlash(p))
 		got, statErr := os.ReadFile(dest) // #nosec G304 -- dest is under ClaudeDir, derived from the embedded artifact tree
 		if statErr != nil {
 			if errors.Is(statErr, fs.ErrNotExist) {
@@ -156,17 +166,17 @@ func checkIntegrity(env Env) Result {
 	})
 	if err != nil {
 		return Result{Name: name, Status: Fail, Detail: "could not check: " + err.Error(),
-			Remediation: "run: herdle init"}
+			Remediation: missingRemediation}
 	}
 	switch {
 	case len(missing) > 0:
 		return Result{Name: name, Status: Fail,
 			Detail:      fmt.Sprintf("%d missing: %s", len(missing), strings.Join(missing, ", ")),
-			Remediation: "run: herdle init"}
+			Remediation: missingRemediation}
 	case len(drifted) > 0:
 		return Result{Name: name, Status: Warn,
 			Detail:      fmt.Sprintf("%d out of date: %s", len(drifted), strings.Join(drifted, ", ")),
-			Remediation: "refresh after an upgrade: herdle init --force"}
+			Remediation: driftRemediation}
 	default:
 		return Result{Name: name, Status: OK, Detail: "present and current"}
 	}
@@ -201,7 +211,7 @@ func checkConfig(env Env) Result {
 // settings schema. The pre-rename marker (code-review-gate) is reported as stale
 // so an upgraded install is told to re-run init.
 func checkGate(env Env) Result {
-	const name = "lifecycle gatekeeper"
+	const name = "claude: lifecycle gatekeeper"
 	data, err := os.ReadFile(env.SettingsPath) // #nosec G304 -- SettingsPath is under ClaudeDir
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

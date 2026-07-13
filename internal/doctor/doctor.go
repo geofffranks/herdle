@@ -7,6 +7,7 @@ package doctor
 import (
 	"io/fs"
 
+	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/vcs"
 )
 
@@ -36,33 +37,42 @@ type Env struct {
 	GL  vcs.GLRunner
 	TK  vcs.TKRunner
 
-	Assets       fs.FS    // embedded artifacts (assets.FS) — drives integrity
-	ClaudeDir    string   // ~/.claude: skills/, rules/, plugins/ live here
-	ConfigPath   string   // config.Path(): the herdle config.toml
-	SettingsPath string   // config.SettingsPath(): ~/.claude/settings.json
-	ExecPath     string   // os.Executable(): the running herdle binary
-	HerdleOnPath string   // exec.LookPath("herdle"); "" when not found
-	PathDirs     []string // PATH split on os.PathListSeparator
+	Agents             []agent.Name
+	Assets             fs.FS // legacy Claude assets; retained during migration
+	ClaudeAssets       fs.FS
+	PolytokenAssets    fs.FS
+	ClaudeDir          string
+	PolytokenDir       string
+	PolytokenHooksPath string
+	PolytokenCommand   string
+	ConfigPath         string
+	SettingsPath       string
+	ExecPath           string
+	HerdleOnPath       string
+	PathDirs           []string
 }
 
-// Run executes every check in fixed display order.
+// Run executes common checks once, then selected harness checks in selection order.
 func Run(env Env) []Result {
-	checks := []func(Env) Result{
-		checkGit,
-		checkTK,
-		checkGH,
-		checkGHAuth,
-		checkGLab,
-		checkGLabAuth,
-		checkSuperpowers,
-		checkHerdlePath,
-		checkIntegrity,
-		checkConfig,
-		checkGate,
+	common := []func(Env) Result{
+		checkGit, checkTK, checkGH, checkGHAuth, checkGLab, checkGLabAuth,
+		checkHerdlePath, checkConfig,
 	}
-	rs := make([]Result, 0, len(checks))
-	for _, c := range checks {
-		rs = append(rs, c(env))
+	rs := make([]Result, 0, len(common)+6)
+	for _, check := range common {
+		rs = append(rs, check(env))
+	}
+	agents := env.Agents
+	if len(agents) == 0 {
+		agents = []agent.Name{agent.Claude}
+	}
+	for _, selected := range agents {
+		switch selected {
+		case agent.Claude:
+			rs = append(rs, checkSuperpowers(env), checkClaudeIntegrity(env), checkGate(env))
+		case agent.Polytoken:
+			rs = append(rs, checkPolytoken(env)...)
+		}
 	}
 	return rs
 }

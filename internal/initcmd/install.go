@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Action describes what Install or Uninstall did to a single destination file.
@@ -32,22 +33,28 @@ type Result struct {
 // 0o750; files are written atomically. Without force an existing destination file
 // is left untouched (Skipped); with force it is Overwritten.
 func Install(src fs.FS, claudeDir string, force bool) ([]Result, error) {
+	return installSelected(src, claudeDir, force, nil)
+}
+
+func installSelected(src fs.FS, claudeDir string, force bool, selected func(string) bool) ([]Result, error) {
 	var results []Result
 	err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() {
+		if d.IsDir() || selected != nil && !selected(p) {
 			return nil
 		}
 		dest := filepath.Join(claudeDir, filepath.FromSlash(p))
 		action := Written
-		if _, statErr := os.Stat(dest); statErr == nil {
+		mode := os.FileMode(0o644)
+		if info, statErr := os.Stat(dest); statErr == nil {
 			if !force {
 				results = append(results, Result{Path: dest, Action: Skipped})
 				return nil
 			}
 			action = Overwritten
+			mode = info.Mode().Perm()
 		} else if !errors.Is(statErr, fs.ErrNotExist) {
 			return statErr // a real stat failure (e.g. permissions) must not pass as a fresh write
 		}
@@ -55,7 +62,7 @@ func Install(src fs.FS, claudeDir string, force bool) ([]Result, error) {
 		if readErr != nil {
 			return readErr
 		}
-		if writeErr := writeAtomic(dest, data, 0o644); writeErr != nil {
+		if writeErr := writeAtomic(dest, data, mode); writeErr != nil {
 			return writeErr
 		}
 		results = append(results, Result{Path: dest, Action: action})
@@ -106,17 +113,29 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 // alive), and never touches config or CLAUDE.md. A destination already gone is not
 // an error.
 func Uninstall(src fs.FS, claudeDir string) ([]Result, error) {
+	return uninstallSelected(src, claudeDir, nil)
+}
+
+func uninstallSelected(src fs.FS, claudeDir string, selected func(string) bool) ([]Result, error) {
 	var results []Result
-	var dirs []string // collected parent-first; pruned child-first (reverse)
+	var dirs []string // collected child-first; pruned in collection order
+	seenDirs := make(map[string]bool)
 	err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if d.IsDir() {
-			if p != "." {
-				dirs = append(dirs, filepath.Join(claudeDir, filepath.FromSlash(p)))
-			}
 			return nil
+		}
+		if selected != nil && !selected(p) {
+			return nil
+		}
+		for parent := filepath.Dir(filepath.FromSlash(p)); parent != "."; parent = filepath.Dir(parent) {
+			destDir := filepath.Join(claudeDir, parent)
+			if !seenDirs[destDir] {
+				dirs = append(dirs, destDir)
+				seenDirs[destDir] = true
+			}
 		}
 		dest := filepath.Join(claudeDir, filepath.FromSlash(p))
 		if _, statErr := os.Stat(dest); statErr != nil {
@@ -134,10 +153,22 @@ func Uninstall(src fs.FS, claudeDir string) ([]Result, error) {
 	if err != nil {
 		return results, err
 	}
-	// WalkDir lists parents before children, so reverse order removes the deepest
-	// dirs first. os.Remove silently fails on a non-empty (foreign-occupied) dir.
-	for i := len(dirs) - 1; i >= 0; i-- {
-		_ = os.Remove(dirs[i])
+	// Prune globally deepest-first so a shared parent is attempted only after all
+	// selected child directories. Non-empty (foreign-occupied) dirs survive.
+	sort.SliceStable(dirs, func(i, j int) bool {
+		return pathDepth(dirs[i]) > pathDepth(dirs[j])
+	})
+	for _, dir := range dirs {
+		_ = os.Remove(dir)
 	}
 	return results, nil
+}
+
+func pathDepth(path string) int {
+	depth := 0
+	for path != filepath.Dir(path) {
+		depth++
+		path = filepath.Dir(path)
+	}
+	return depth
 }

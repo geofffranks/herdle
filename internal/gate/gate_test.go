@@ -168,6 +168,129 @@ var _ = Describe("EffortsFromTranscript", func() {
 	})
 })
 
+var _ = Describe("PolytokenReviewEvidence", func() {
+	markers := []string{
+		"- [x] Standard review completed",
+		"- [x] Standard review findings addressed",
+		"- [x] Deep review completed",
+		"- [x] Deep review findings addressed",
+	}
+	keys := []string{"standard-completed", "standard-addressed", "deep-completed", "deep-addressed"}
+	doc := func(lines []string) string {
+		return "## Herdle code review\n\n" + strings.Join(lines, "\n") + "\n"
+	}
+
+	It("requires each Polytoken marker exactly once", func() {
+		ev := gate.PolytokenReviewEvidence([]string{doc(markers)}, true)
+		Expect(ev.ReadOK).To(BeTrue())
+		Expect(ev.Present).To(HaveLen(4))
+		for _, key := range keys {
+			Expect(ev.Present[key]).To(BeTrue(), key)
+		}
+	})
+
+	DescribeTable("rejects a missing marker",
+		func(index int) {
+			lines := append([]string(nil), markers...)
+			lines = append(lines[:index], lines[index+1:]...)
+			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
+			Expect(ev.Present[keys[index]]).To(BeFalse())
+		},
+		Entry("standard completed", 0),
+		Entry("standard addressed", 1),
+		Entry("deep completed", 2),
+		Entry("deep addressed", 3),
+	)
+
+	DescribeTable("rejects an unchecked marker",
+		func(index int) {
+			lines := append([]string(nil), markers...)
+			lines[index] = strings.Replace(lines[index], "[x]", "[ ]", 1)
+			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
+			Expect(ev.Present[keys[index]]).To(BeFalse())
+		},
+		Entry("standard completed", 0),
+		Entry("standard addressed", 1),
+		Entry("deep completed", 2),
+		Entry("deep addressed", 3),
+	)
+
+	DescribeTable("rejects an altered marker",
+		func(index int) {
+			lines := append([]string(nil), markers...)
+			lines[index] += "."
+			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
+			Expect(ev.Present[keys[index]]).To(BeFalse())
+		},
+		Entry("standard completed", 0),
+		Entry("standard addressed", 1),
+		Entry("deep completed", 2),
+		Entry("deep addressed", 3),
+	)
+
+	DescribeTable("rejects a duplicate marker",
+		func(index int) {
+			lines := append([]string(nil), markers...)
+			lines = append(lines, markers[index])
+			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
+			Expect(ev.Present[keys[index]]).To(BeFalse())
+		},
+		Entry("standard completed", 0),
+		Entry("standard addressed", 1),
+		Entry("deep completed", 2),
+		Entry("deep addressed", 3),
+	)
+
+	DescribeTable("recognizes fences with zero to three leading spaces",
+		func(indent string) {
+			fenced := indent + "```markdown\n" + strings.Join(markers, "\n") + "\n" + indent + "```\n"
+			ev := gate.PolytokenReviewEvidence([]string{fenced}, true)
+			for _, key := range keys {
+				Expect(ev.Present[key]).To(BeFalse(), key)
+			}
+		},
+		Entry("zero spaces", ""),
+		Entry("one space", " "),
+		Entry("two spaces", "  "),
+		Entry("three spaces", "   "),
+	)
+
+	DescribeTable("does not recognize four-space or tab-indented backticks as fences",
+		func(indent string) {
+			doc := indent + "```markdown\n" + strings.Join(markers, "\n") + "\n" + indent + "```\n"
+			ev := gate.PolytokenReviewEvidence([]string{doc}, true)
+			for _, key := range keys {
+				Expect(ev.Present[key]).To(BeTrue(), key)
+			}
+		},
+		Entry("four spaces", "    "),
+		Entry("tab", "\t"),
+	)
+
+	It("keeps a three-backtick run inside a four-backtick fence as content", func() {
+		fenced := "````markdown\n```\n" + strings.Join(markers, "\n") + "\n```\n````\n"
+		ev := gate.PolytokenReviewEvidence([]string{fenced}, true)
+		for _, key := range keys {
+			Expect(ev.Present[key]).To(BeFalse(), key)
+		}
+	})
+
+	It("excludes markers inside tilde fences", func() {
+		fenced := "~~~markdown\n" + strings.Join(markers, "\n") + "\n~~~   \n"
+		ev := gate.PolytokenReviewEvidence([]string{fenced}, true)
+		for _, key := range keys {
+			Expect(ev.Present[key]).To(BeFalse(), key)
+		}
+	})
+
+	It("fails closed when scanning a validation doc exceeds the scanner limit", func() {
+		oversized := doc(markers) + strings.Repeat("x", 16*1024*1024+1) + "\n"
+		ev := gate.PolytokenReviewEvidence([]string{oversized}, true)
+		Expect(ev.ReadOK).To(BeFalse())
+		Expect(ev.Unreadable).NotTo(BeEmpty())
+	})
+})
+
 var _ = Describe("OpenItemCount", func() {
 	It("counts unchecked boxes and ignores checked ones", func() {
 		doc := "- [x] done\n- [ ] todo\n* [ ] another\n+ [X] also done\n"
@@ -186,6 +309,15 @@ var _ = Describe("OpenItemCount", func() {
 	It("returns zero for a doc with no task items", func() {
 		Expect(gate.OpenItemCount("# Title\n\nprose only\n")).To(Equal(0))
 	})
+	It("counts unchecked items after a stray single-backtick fence opener using the shared markdownFence", func() {
+		// A four-space-indented ``` is NOT a CommonMark fence (markdownFence
+		// allows at most three leading spaces), but the old
+		// strings.HasPrefix/TrimSpace detector treated it as one. That made
+		// OpenItemCount hide the unchecked items below → return 0 → false-allow
+		// validated. Using the shared markdownFence, the items are counted.
+		doc := "    ```\n- [ ] human\n- [ ] another\n"
+		Expect(gate.OpenItemCount(doc)).To(Equal(2))
+	})
 })
 
 var _ = Describe("Decide", func() {
@@ -198,7 +330,8 @@ var _ = Describe("Decide", func() {
 	Describe("pending-validation", func() {
 		in := gate.HookInput{ToolName: "Edit", FilePath: ticket, WrittenText: "lifecycle: pending-validation\n"}
 		env := func(tr io.Reader) gate.Env {
-			return gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket, Transcript: tr}
+			return gate.Env{Transition: gate.ToPendingValidation, TicketPath: ticket,
+				ReviewEvidence: gate.ClaudeReviewEvidence(tr, ticket)}
 		}
 		It("allows a non-gating call", func() {
 			Expect(gate.Decide(gate.HookInput{}, gate.Env{Transition: gate.None}).Allow).To(BeTrue())
@@ -206,10 +339,21 @@ var _ = Describe("Decide", func() {
 		It("allows when both passes are present", func() {
 			Expect(gate.Decide(in, env(strings.NewReader(bothReviews))).Allow).To(BeTrue())
 		})
-		It("blocks and names the missing pass", func() {
+		It("blocks and names the missing pass with the exact legacy Claude reason", func() {
 			d := gate.Decide(in, env(strings.NewReader(skill("medium")+"\n")))
 			Expect(d.Allow).To(BeFalse())
 			Expect(d.Missing).To(Equal([]string{"high"}))
+			Expect(d.Reason).To(Equal("Gatekeeper: lifecycle:pending-validation requires both /code-review passes this session. " +
+				"Missing: high. Invoke the code-review Skill directly (not a hand-rolled sweep or a subagent), " +
+				"or add [skip-code-review-gate] <reason>."))
+		})
+		It("formats a harness-specific suffix without inspecting the intro text", func() {
+			e := gate.Env{Transition: gate.ToPendingValidation, ReviewEvidence: gate.ReviewEvidence{
+				ReadOK: true, Required: []string{"review"}, Present: map[string]bool{},
+				BlockedIntro: "custom intro: ", BlockedSuffix: " custom suffix",
+			}}
+			d := gate.Decide(in, e)
+			Expect(d.Reason).To(Equal("custom intro: review. custom suffix"))
 		})
 		It("fails closed on a nil transcript", func() {
 			Expect(gate.Decide(in, env(nil)).Allow).To(BeFalse())
@@ -231,7 +375,7 @@ var _ = Describe("Decide", func() {
 		})
 		It("still gates a forward bump from in-development (no rollback)", func() {
 			e := envDisk("in-development")
-			e.Transcript = strings.NewReader(skill("medium") + "\n") // only one pass
+			e.ReviewEvidence = gate.ClaudeReviewEvidence(strings.NewReader(skill("medium")+"\n"), ticket) // only one pass
 			Expect(gate.Decide(in, e).Allow).To(BeFalse())
 		})
 		It("does not treat a body line as the on-disk state (no rollback short-circuit)", func() {
@@ -261,10 +405,15 @@ var _ = Describe("Decide", func() {
 		base := func() gate.Env {
 			return gate.Env{Transition: gate.ToValidated, TicketPath: ticket,
 				TicketContent: "lifecycle: pending-validation\n", TicketReadOK: true,
-				ValidationFound: true, ValidationDocs: []string{"- [x] done\n"}}
+				ValidationFound: true, ValidationReadOK: true, ValidationDocs: []string{"- [x] done\n"}}
 		}
-		It("allows when pending-validation and every box checked", func() {
+		It("allows when pending-validation and every readable box is checked", func() {
 			Expect(gate.Decide(in, base()).Allow).To(BeTrue())
+		})
+		It("fails closed when any matched validation doc is unreadable", func() {
+			e := base()
+			e.ValidationReadOK = false
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
 		})
 		It("blocks when a validation box is open", func() {
 			e := base()
@@ -286,6 +435,15 @@ var _ = Describe("Decide", func() {
 			e := base()
 			e.ValidationFound = false
 			e.ValidationDocs = nil
+			Expect(gate.Decide(in, e).Allow).To(BeFalse())
+		})
+		It("blocks validated when a stray fence opener hides unchecked items (gate-bypass regression)", func() {
+			// A four-space-indented ``` is not a CommonMark fence, but the old
+			// HasPrefix/TrimSpace detector treated it as one, so OpenItemCount
+			// returned 0 and the validated transition was false-allowed. The
+			// shared markdownFence keeps the unchecked items visible → blocked.
+			e := base()
+			e.ValidationDocs = []string{"    ```\n- [ ] human\n- [ ] another\n"}
 			Expect(gate.Decide(in, e).Allow).To(BeFalse())
 		})
 		It("fails closed when the ticket is unreadable", func() {

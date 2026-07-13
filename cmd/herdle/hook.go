@@ -9,6 +9,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/gate"
 )
 
@@ -28,8 +29,16 @@ func hookCommand() *cli.Command {
 				// the docs-drift surface, so only `gatekeeper` needs documenting.
 				Aliases: []string{"code-review-gate"},
 				Usage:   "PreToolUse gate enforcing herdle lifecycle transitions",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "agent", Value: string(agent.Claude), Hidden: true},
+				},
 				Action: func(c *cli.Context) error {
-					d := runGatekeeper(os.Stdin)
+					harness := agent.Name(c.String("agent"))
+					projectDir := ""
+					if harness == agent.Polytoken {
+						projectDir = firstNonEmpty(os.Getenv("POLYTOKEN_PROJECT_DIR"), os.Getenv("POLYTOKEN_PROJECT_PATH"))
+					}
+					d := runGatekeeper(os.Stdin, harness, projectDir)
 					if d.Allow {
 						return nil // exit 0
 					}
@@ -41,7 +50,7 @@ func hookCommand() *cli.Command {
 	}
 }
 
-type rawHookInput struct {
+type rawClaudeHookInput struct {
 	ToolName  string `json:"tool_name"`
 	ToolInput struct {
 		FilePath  string `json:"file_path"`
@@ -53,52 +62,139 @@ type rawHookInput struct {
 	Cwd            string `json:"cwd"`
 }
 
-// runGatekeeper parses the PreToolUse payload, classifies the lifecycle
-// transition, gathers only the evidence that transition needs, and returns the
-// gate decision. A malformed envelope fails OPEN (we cannot tell it is a gating
-// edit). A confirmed gating edit whose evidence is unreadable fails CLOSED inside
-// gate.Decide.
-func runGatekeeper(r io.Reader) gate.Decision {
-	var raw rawHookInput
+type rawPolytokenHookInput struct {
+	ToolName string `json:"tool_name"`
+	Input    struct {
+		Path      string `json:"path"`
+		NewString string `json:"new_string"`
+		Content   string `json:"content"`
+		Command   string `json:"command"`
+	} `json:"input"`
+}
+
+func parseClaudeHook(r io.Reader) (gate.HookInput, rawClaudeHookInput, bool) {
+	var raw rawClaudeHookInput
 	if err := json.NewDecoder(r).Decode(&raw); err != nil {
-		return gate.Decision{Allow: true}
+		return gate.HookInput{}, raw, false
 	}
-	in := gate.HookInput{
+	return gate.HookInput{
 		ToolName:    raw.ToolName,
 		FilePath:    raw.ToolInput.FilePath,
 		WrittenText: firstNonEmpty(raw.ToolInput.NewString, raw.ToolInput.Content),
 		Command:     raw.ToolInput.Command,
+	}, raw, true
+}
+
+func resolvePolytokenTicketPath(path, projectDir string) (resolved string, readable bool) {
+	if filepath.IsAbs(path) {
+		return path, true
+	}
+	if projectDir != "" {
+		return filepath.Join(projectDir, path), true
+	}
+	return filepath.Join(string(filepath.Separator), path), false
+}
+
+func parsePolytokenHook(r io.Reader) (gate.HookInput, bool) {
+	var raw rawPolytokenHookInput
+	if err := json.NewDecoder(r).Decode(&raw); err != nil {
+		return gate.HookInput{}, false
+	}
+	in := gate.HookInput{
+		FilePath:    raw.Input.Path,
+		WrittenText: firstNonEmpty(raw.Input.NewString, raw.Input.Content),
+		Command:     raw.Input.Command,
+	}
+	switch raw.ToolName {
+	case "file_edit_search_replace":
+		in.ToolName = "Edit"
+	case "file_write":
+		in.ToolName = "Write"
+	case "shell_exec":
+		in.ToolName = "Bash"
+	default:
+		return gate.HookInput{}, false
+	}
+	return in, true
+}
+
+// runGatekeeper parses the harness envelope, classifies the lifecycle
+// transition, gathers only the evidence that transition needs, and returns the
+// gate decision. Malformed and irrelevant envelopes fail open. Once a gating
+// transition is recognized, unreadable required evidence fails closed.
+func runGatekeeper(r io.Reader, harness agent.Name, projectDir string) gate.Decision {
+	var in gate.HookInput
+	var claudeRaw rawClaudeHookInput
+	var ok bool
+	switch harness {
+	case agent.Polytoken:
+		in, ok = parsePolytokenHook(r)
+	case agent.Claude:
+		in, claudeRaw, ok = parseClaudeHook(r)
+	default:
+		return gate.Decision{Allow: true}
+	}
+	if !ok {
+		return gate.Decision{Allow: true}
+	}
+	pathReadable := true
+	if harness == agent.Polytoken && in.ToolName != "Bash" {
+		in.FilePath, pathReadable = resolvePolytokenTicketPath(in.FilePath, projectDir)
 	}
 	ticketPath, t := gate.ShouldEvaluate(in)
 	if t == gate.None {
 		return gate.Decision{Allow: true}
 	}
 	env := gate.Env{Transition: t, TicketPath: ticketPath}
-	abs := resolvePath(ticketPath, raw.Cwd)
+	root := projectDir
+	if harness == agent.Claude {
+		root = claudeRaw.Cwd
+	}
+	abs := resolvePath(ticketPath, root)
+	if in.ToolName == "Bash" {
+		pathReadable = filepath.IsAbs(ticketPath) || root != ""
+	}
 
 	switch t {
 	case gate.ToPendingValidation:
-		// The on-disk lifecycle lets decidePending detect a backward rollback
-		// (validated/pending-validation → pending-validation), which skips the
-		// transcript check; a forward bump still needs the transcript below.
-		env.TicketContent, env.TicketReadOK = readTicket(abs)
-		if raw.TranscriptPath != "" {
-			if f, err := os.Open(raw.TranscriptPath); err == nil { // #nosec G304 -- path is supplied by Claude Code
-				defer func() { _ = f.Close() }()
-				env.Transcript = f
-			}
+		if pathReadable {
+			env.TicketContent, env.TicketReadOK = readTicket(abs)
 		}
-		return gate.Decide(in, env) // nil Transcript → fail closed (unless rollback)
+		if harness == agent.Polytoken {
+			var docs []string
+			var found, allReadable bool
+			if pathReadable {
+				docs, found, allReadable = readValidationDocs(abs)
+			}
+			env.ReviewEvidence = gate.PolytokenReviewEvidence(docs, found && allReadable)
+		} else {
+			var transcript io.Reader
+			if claudeRaw.TranscriptPath != "" {
+				if f, err := os.Open(claudeRaw.TranscriptPath); err == nil { // #nosec G304 -- path is supplied by Claude Code
+					defer func() { _ = f.Close() }()
+					transcript = f
+				}
+			}
+			env.ReviewEvidence = gate.ClaudeReviewEvidence(transcript, ticketPath)
+		}
 	case gate.ToValidated:
-		env.TicketContent, env.TicketReadOK = readTicket(abs)
-		env.ValidationDocs, env.ValidationFound = readValidationDocs(abs)
-		return gate.Decide(in, env)
+		if pathReadable {
+			env.TicketContent, env.TicketReadOK = readTicket(abs)
+			// Invariant: when ValidationReadOK is true, ValidationDocs holds the
+			// contents of every matched validation doc and every one was readable,
+			// and ValidationFound is true. decideValidated relies on this — it only
+			// runs OpenItemCount over ValidationDocs when ValidationFound &&
+			// ValidationReadOK — so an unreadable match must surface as
+			// ValidationReadOK == false (and an empty-but-matched set is forbidden
+			// by readValidationDocs returning found == false). Never append a doc
+			// that could not be read.
+			env.ValidationDocs, env.ValidationFound, env.ValidationReadOK = readValidationDocs(abs)
+		}
 	case gate.ToInDevelopment:
-		env.TicketContent, env.TicketReadOK = readTicket(abs)
-		return gate.Decide(in, env)
+		if pathReadable {
+			env.TicketContent, env.TicketReadOK = readTicket(abs)
+		}
 	}
-	// Unreachable: ShouldEvaluate returns only None (handled above) or one of the
-	// three transitions handled in the switch. Kept to satisfy the compiler.
 	return gate.Decide(in, env)
 }
 
@@ -134,25 +230,29 @@ func repoRootFromTicket(absTicket string) string {
 
 // readValidationDocs locates the validation doc(s) for the ticket at absTicket and
 // returns their contents. The match is the tkid-glob herdle uses elsewhere:
-// <repoRoot>/docs/superpowers/validation/*<tkid>*. found is false when none match
-// or none are readable (the validated gate then fails closed).
-func readValidationDocs(absTicket string) (docs []string, found bool) {
+// <repoRoot>/docs/superpowers/validation/*<tkid>*. found reports whether any path
+// matched; allReadable is false when any matched path could not be read.
+func readValidationDocs(absTicket string) (docs []string, found, allReadable bool) {
 	root := repoRootFromTicket(absTicket)
 	if root == "" {
-		return nil, false
+		return nil, false, false
 	}
 	tkid := strings.TrimSuffix(filepath.Base(absTicket), ".md")
 	pattern := filepath.Join(root, "docs", "superpowers", "validation", "*"+tkid+"*")
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
-		return nil, false
+		return nil, false, false
 	}
+	allReadable = true
 	for _, m := range matches {
-		if data, err := os.ReadFile(m); err == nil { // #nosec G304 -- repo-local validation doc
-			docs = append(docs, string(data))
+		data, err := os.ReadFile(m) // #nosec G304 -- repo-local validation doc
+		if err != nil {
+			allReadable = false
+			continue
 		}
+		docs = append(docs, string(data))
 	}
-	return docs, len(docs) > 0
+	return docs, true, allReadable
 }
 
 func firstNonEmpty(a, b string) string {

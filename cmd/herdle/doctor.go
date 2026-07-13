@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/geofffranks/herdle/assets"
+	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/config"
 	"github.com/geofffranks/herdle/internal/doctor"
 	"github.com/geofffranks/herdle/internal/render"
@@ -18,14 +19,21 @@ import (
 // doctorCommand builds the `herdle doctor` command.
 func doctorCommand() *cli.Command {
 	return &cli.Command{
-		Name:   "doctor",
-		Usage:  "diagnose the herdle setup",
+		Name:  "doctor",
+		Usage: "diagnose the herdle setup",
+		Flags: []cli.Flag{
+			&cli.StringSliceFlag{Name: "agent", Usage: "agent harness to configure: claude or polytoken (repeatable)"},
+		},
 		Action: doctorAction,
 	}
 }
 
 func doctorAction(c *cli.Context) error {
-	env, err := buildDoctorEnv()
+	selected, err := agent.Parse(c.StringSlice("agent"))
+	if err != nil {
+		return err
+	}
+	env, err := buildDoctorEnv(selected)
 	if err != nil {
 		return err
 	}
@@ -40,8 +48,12 @@ func doctorAction(c *cli.Context) error {
 }
 
 // buildDoctorEnv assembles the doctor.Env from the real environment.
-func buildDoctorEnv() (doctor.Env, error) {
+func buildDoctorEnv(selected []agent.Name) (doctor.Env, error) {
 	claudeDir, err := config.ClaudeDir()
+	if err != nil {
+		return doctor.Env{}, err
+	}
+	polytokenDir, err := config.PolytokenDir()
 	if err != nil {
 		return doctor.Env{}, err
 	}
@@ -59,16 +71,21 @@ func buildDoctorEnv() (doctor.Env, error) {
 	}
 	herdleOnPath, _ := exec.LookPath("herdle") // "" when not found — not an error here
 	return doctor.Env{
-		Git:          vcs.NewGitRunner(),
-		GH:           vcs.NewGHRunner(),
-		GL:           vcs.NewGLRunner(),
-		TK:           vcs.NewTKRunner(),
-		Assets:       assets.FS,
-		ClaudeDir:    claudeDir,
-		ConfigPath:   configPath,
-		SettingsPath: settingsPath,
-		ExecPath:     exe,
-		HerdleOnPath: herdleOnPath,
-		PathDirs:     filepath.SplitList(os.Getenv("PATH")),
+		Git:                vcs.NewGitRunner(),
+		GH:                 vcs.NewGHRunner(),
+		GL:                 vcs.NewGLRunner(),
+		TK:                 vcs.NewTKRunner(),
+		Agents:             selected,
+		ClaudeAssets:       assets.ClaudeFS,
+		PolytokenAssets:    assets.PolytokenFS,
+		ClaudeDir:          claudeDir,
+		PolytokenDir:       polytokenDir,
+		PolytokenHooksPath: filepath.Join(polytokenDir, "hooks.json"),
+		PolytokenCommand:   exe + " hook gatekeeper --agent polytoken",
+		ConfigPath:         configPath,
+		SettingsPath:       settingsPath,
+		ExecPath:           exe,
+		HerdleOnPath:       herdleOnPath,
+		PathDirs:           filepath.SplitList(os.Getenv("PATH")),
 	}, nil
 }

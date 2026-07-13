@@ -2,13 +2,13 @@
 
 > **Wrangle the herd, spot the hurdles.**
 
-herdle is a self-contained Go binary that gives you a cross-project, tk-driven work-in-progress dashboard across many git repos on GitHub and GitLab (gitlab.com and self-hosted) — open PRs/MRs, cleanup candidates, in-flight branches, and up-next tickets, all in one view. It also installs the Claude Code convention skills and a rules stub into `~/.claude/` so your AI assistant speaks the same workflow language from day one.
+herdle is a self-contained Go binary that gives you a cross-project, tk-driven work-in-progress dashboard across many git repos on GitHub and GitLab (gitlab.com and self-hosted) — open PRs/MRs, cleanup candidates, in-flight branches, and up-next tickets, all in one view. It also installs convention skills and lifecycle gates for Claude Code and Polytoken so your AI assistant speaks the same workflow language from day one.
 
 ## What you get
 
 **Cross-project dashboard** — run `herdle --all` for a one-line summary per configured repo, or `herdle` inside any repo for a full drilldown: open PRs correlated to tickets, merged PRs needing branch cleanup, work-in-progress branches with sync state, and an up-next queue sorted by priority. Design artifacts (specs/plans/validation docs) are listed alongside their tickets.
 
-**Skills + rules installation** — `herdle init` writes the superpowers skills and a Claude Code rules stub into `~/.claude/`, seeds an initial `config.toml`, and gets you ready to run.
+**Agent setup** — bare `herdle init` remains the Claude-compatible default. `herdle init --agent polytoken` installs global Polytoken skills, context, and lifecycle gating under `${XDG_CONFIG_HOME:-$HOME/.config}/polytoken`; repeat `--agent` to configure both harnesses in the requested order. Herdle seeds its own `config.toml` once after all selected installs succeed.
 
 ## Requirements at a glance
 
@@ -27,10 +27,16 @@ See [docs/install.md](docs/install.md) for the full dependency contract and inst
 Download the binary for your platform from the [latest GitHub Release](https://github.com/geofffranks/herdle/releases/latest) — assets are named `herdle-<os>-<arch>` (e.g. `herdle-darwin-arm64`, `herdle-linux-amd64`). Put it on your `PATH`, then:
 
 ```bash
-herdle init      # writes the skills + rules, seeds config
-herdle doctor    # verify the setup
-herdle --all     # cross-project summary
+herdle init                            # Claude-compatible default
+herdle init --agent polytoken          # global Polytoken setup
+herdle init --agent claude --agent polytoken  # configure both, in this order
+herdle doctor --agent polytoken        # verify the selected harness
+herdle --all                           # cross-project summary
 ```
+
+After installation or upgrade, use `/reload` in Claude Code and start a new
+Polytoken session (or restart the current client) so newly installed global
+skills, context, and hooks are loaded.
 
 ## Sample
 

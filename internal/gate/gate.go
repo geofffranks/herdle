@@ -337,16 +337,123 @@ func sameTicket(a, b string) bool {
 	return a == b || strings.HasSuffix(a, "/"+b) || strings.HasSuffix(b, "/"+a)
 }
 
+// ReviewEvidence is the harness-neutral proof required before a forward bump to
+// pending-validation. Required order is also the stable order used in denials.
+type ReviewEvidence struct {
+	ReadOK        bool
+	Required      []string
+	Present       map[string]bool
+	Unreadable    string
+	BlockedIntro  string
+	BlockedSuffix string
+}
+
+// ClaudeReviewEvidence adapts the existing session transcript evidence without
+// changing its matching or user-facing denial text.
+func ClaudeReviewEvidence(r io.Reader, ticketPath string) ReviewEvidence {
+	ev := ReviewEvidence{
+		ReadOK:        r != nil,
+		Required:      []string{"medium", "high"},
+		Present:       map[string]bool{},
+		Unreadable:    failClosedReason,
+		BlockedIntro:  claudeBlockedIntro,
+		BlockedSuffix: claudeBlockedSuffix,
+	}
+	if r != nil {
+		ev.Present = EffortsFromTranscript(r, ticketPath)
+	}
+	return ev
+}
+
+var polytokenReviewMarkers = []struct {
+	key  string
+	line string
+}{
+	{"standard-completed", "- [x] Standard review completed"},
+	{"standard-addressed", "- [x] Standard review findings addressed"},
+	{"deep-completed", "- [x] Deep review completed"},
+	{"deep-addressed", "- [x] Deep review findings addressed"},
+}
+
+func markdownFence(line string) (char byte, run int, trailingWhitespace bool) {
+	leadingSpaces := 0
+	for leadingSpaces < len(line) && line[leadingSpaces] == ' ' {
+		leadingSpaces++
+	}
+	if leadingSpaces > 3 {
+		return 0, 0, false
+	}
+	trimmed := line[leadingSpaces:]
+	if len(trimmed) == 0 || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return 0, 0, false
+	}
+	char = trimmed[0]
+	for run < len(trimmed) && trimmed[run] == char {
+		run++
+	}
+	return char, run, strings.TrimSpace(trimmed[run:]) == ""
+}
+
+// PolytokenReviewEvidence recognizes each durable validation-doc marker only
+// when its complete line occurs exactly once outside fenced code blocks.
+func PolytokenReviewEvidence(docs []string, found bool) ReviewEvidence {
+	ev := ReviewEvidence{
+		ReadOK:       found,
+		Required:     make([]string, 0, len(polytokenReviewMarkers)),
+		Present:      map[string]bool{},
+		Unreadable:   polytokenUnreadableReason,
+		BlockedIntro: polytokenBlockedIntro,
+	}
+	counts := map[string]int{}
+	for _, marker := range polytokenReviewMarkers {
+		ev.Required = append(ev.Required, marker.key)
+	}
+	for _, doc := range docs {
+		var fenceChar byte
+		fenceLen := 0
+		sc := bufio.NewScanner(strings.NewReader(doc))
+		sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+		for sc.Scan() {
+			line := sc.Text()
+			char, run, trailingWhitespace := markdownFence(line)
+			if fenceLen == 0 {
+				if run >= 3 {
+					fenceChar, fenceLen = char, run
+					continue
+				}
+			} else {
+				if char == fenceChar && run >= fenceLen && trailingWhitespace {
+					fenceChar, fenceLen = 0, 0
+				}
+				continue
+			}
+			for _, marker := range polytokenReviewMarkers {
+				if line == marker.line {
+					counts[marker.key]++
+				}
+			}
+		}
+		if sc.Err() != nil {
+			ev.ReadOK = false
+		}
+	}
+	for _, marker := range polytokenReviewMarkers {
+		ev.Present[marker.key] = counts[marker.key] == 1
+	}
+	return ev
+}
+
 // Env carries everything Decide needs, pre-read by the cmd adapter so the core
 // stays free of process and filesystem access.
 type Env struct {
-	Transition      Transition
-	TicketPath      string    // gated ticket file, for the transcript bound
-	Transcript      io.Reader // ToPendingValidation; nil if unreadable
-	TicketContent   string    // on-disk ticket (pre-edit); ToValidated / ToInDevelopment
-	TicketReadOK    bool      // the on-disk ticket was readable
-	ValidationDocs  []string  // ToValidated: contents of matched validation docs
-	ValidationFound bool      // ToValidated: at least one validation doc matched
+	Transition       Transition
+	TicketPath       string         // gated ticket file, for evidence correlation
+	ReviewEvidence   ReviewEvidence // ToPendingValidation
+	TicketContent    string         // on-disk ticket (pre-edit); all transitions
+	TicketReadOK     bool           // the on-disk ticket was readable
+	ValidationDocs   []string       // ToValidated: contents of matched validation docs
+	ValidationFound  bool           // ToValidated: at least one validation doc matched
+	ValidationReadOK bool           // ToValidated: every matched validation doc was readable
 }
 
 // Decide is the gatekeeper verdict for one tool call, routed by transition. The
@@ -379,21 +486,21 @@ func decidePending(in HookInput, env Env) Decision {
 			return Decision{Allow: true}
 		}
 	}
-	if env.Transcript == nil {
-		return Decision{Allow: false, Missing: []string{"medium", "high"}, Reason: failClosedReason}
+	ev := env.ReviewEvidence
+	if !ev.ReadOK {
+		return Decision{Allow: false, Missing: append([]string(nil), ev.Required...), Reason: ev.Unreadable}
 	}
-	efforts := EffortsFromTranscript(env.Transcript, env.TicketPath)
 	var missing []string
-	if !efforts["medium"] {
-		missing = append(missing, "medium")
-	}
-	if !efforts["high"] {
-		missing = append(missing, "high")
+	for _, key := range ev.Required {
+		if !ev.Present[key] {
+			missing = append(missing, key)
+		}
 	}
 	if len(missing) == 0 {
 		return Decision{Allow: true}
 	}
-	return Decision{Allow: false, Missing: missing, Reason: blockReason(missing)}
+	reason := ev.BlockedIntro + strings.Join(missing, ", ") + "." + ev.BlockedSuffix
+	return Decision{Allow: false, Missing: missing, Reason: reason}
 }
 
 func decideValidated(in HookInput, env Env) Decision {
@@ -413,8 +520,9 @@ func decideValidated(in HookInput, env Env) Decision {
 	default:
 		return Decision{Allow: false, Reason: monotonicReason}
 	}
-	// Open-items: a validation doc must exist and have zero unchecked boxes.
-	if !env.ValidationFound {
+	// Open-items: a validation doc must exist, every match must be readable, and
+	// the readable contents must have zero unchecked boxes.
+	if !env.ValidationFound || !env.ValidationReadOK {
 		return Decision{Allow: false, Reason: missingDocReason}
 	}
 	open := 0
@@ -442,6 +550,17 @@ func decideInDevelopment(in HookInput, env Env) Decision {
 const failClosedReason = "Gatekeeper: cannot read the session transcript to verify the /code-review passes. " +
 	"Re-run after invoking the code-review Skill for medium and high, or add [skip-code-review-gate] <reason>."
 
+const claudeBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires both /code-review passes this session. " +
+	"Missing: "
+
+const claudeBlockedSuffix = " Invoke the code-review Skill directly (not a hand-rolled sweep or a subagent), " +
+	"or add [skip-code-review-gate] <reason>."
+
+const polytokenUnreadableReason = "Gatekeeper: cannot read the ticket-correlated validation doc to verify the Polytoken review markers. " +
+	"Record the standard and deep review completion and findings-addressed markers, or add [skip-code-review-gate] <reason>."
+
+const polytokenBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires durable Polytoken review evidence. Missing: "
+
 const monotonicReason = "Gatekeeper: lifecycle:validated requires the ticket to be at " +
 	"pending-validation first (no skipping). Bump to pending-validation (which runs the code-review " +
 	"check), validate, then set validated — or add [skip-validation-gate] <reason>."
@@ -468,20 +587,32 @@ func openItemsReason(n int) string {
 var taskItemRE = regexp.MustCompile(`^\s*[-*+]\s+\[([ xX])\]`)
 
 // OpenItemCount returns the number of unchecked task items ("- [ ]") in a
-// validation document. Lines inside fenced code blocks (```) are skipped so an
+// validation document. Lines inside fenced code blocks are skipped so an
 // example checkbox in prose does not count; a checked box never counts.
+//
+// Fence detection uses the same markdownFence function as
+// PolytokenReviewEvidence so the two scanners agree on what counts as fenced:
+// a stray single ``` (or ~~~) before unchecked items does not open a fence on
+// its own and the items below are counted normally. Both detectors track the
+// opening delimiter character and run length, requiring a matching close.
 func OpenItemCount(doc string) int {
 	n := 0
-	inFence := false
+	var fenceChar byte
+	fenceLen := 0
 	sc := bufio.NewScanner(strings.NewReader(doc))
 	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for sc.Scan() {
 		line := sc.Text()
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			inFence = !inFence
-			continue
-		}
-		if inFence {
+		char, run, trailingWhitespace := markdownFence(line)
+		if fenceLen == 0 {
+			if run >= 3 {
+				fenceChar, fenceLen = char, run
+				continue
+			}
+		} else {
+			if char == fenceChar && run >= fenceLen && trailingWhitespace {
+				fenceChar, fenceLen = 0, 0
+			}
 			continue
 		}
 		if m := taskItemRE.FindStringSubmatch(line); m != nil && m[1] == " " {
@@ -489,10 +620,4 @@ func OpenItemCount(doc string) int {
 		}
 	}
 	return n
-}
-
-func blockReason(missing []string) string {
-	return "Gatekeeper: lifecycle:pending-validation requires both /code-review passes this session. " +
-		"Missing: " + strings.Join(missing, ", ") + ". Invoke the code-review Skill directly (not a hand-rolled " +
-		"sweep or a subagent), or add [skip-code-review-gate] <reason>."
 }

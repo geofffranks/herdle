@@ -228,14 +228,23 @@ touched; only the herdle config entry is deleted.
 ### `herdle doctor`
 
 ```
-herdle doctor
+herdle doctor [--agent claude|polytoken]...
 ```
 
 Inspects the herdle setup and reports on required and optional dependencies
-(e.g. `git`, `gh`, `tk`). Required dependencies that are missing or misconfigured
-cause a non-zero exit code, making `herdle doctor` safe to use in scripts or CI
-checks. Optional dependencies that are absent produce warnings but do not affect
-the exit code.
+(e.g. `git`, `gh`, `tk`). `--agent` is repeatable, preserves selection order,
+and deduplicates names. With no flag, doctor checks Claude for backward
+compatibility; use `--agent polytoken` for only the global Polytoken setup or
+repeat the flag for both harnesses.
+
+Common rows appear once. Claude adds `superpowers`, `claude: skills + rule`, and
+`claude: lifecycle gatekeeper`; Polytoken adds `polytoken: skills + context`,
+`polytoken: AGENTS.md link`, and `polytoken: lifecycle gatekeeper`. Polytoken
+remediation distinguishes a missing install (`herdle init --agent polytoken`),
+stale standalone files (`herdle init --agent polytoken --force`), and malformed
+shared files that must be repaired first. Required dependencies that are missing
+or misconfigured cause a non-zero exit code, making doctor safe for scripts or
+CI. Optional dependency warnings do not affect the exit code.
 
 ### `herdle version`
 
@@ -249,25 +258,45 @@ or tag).
 ### `herdle init`
 
 ```
-herdle init [--force] [--uninstall]
+herdle init [--agent claude|polytoken]... [--force] [--uninstall]
 ```
 
-Writes herdle's embedded Claude Code skills and rules into your Claude Code
-configuration (`~/.claude/skills/` and `~/.claude/rules/`) and seeds the herdle
-config (`~/.config/herdle/`) if it does not already exist. Flags:
+Installs Herdle's embedded agent assets and seeds
+`${XDG_CONFIG_HOME:-$HOME/.config}/herdle/config.toml` once, after all selected
+installs succeed. With no `--agent`, init keeps the Claude-compatible default.
+`--agent claude` is explicit Claude-only setup; `--agent polytoken` is global
+Polytoken-only setup; repeat the flag to install both in the requested order.
+Repeated values are deduplicated and unknown values are rejected before writes.
+There is no project-local Polytoken mode.
 
-- `--force` — overwrite existing skill/rule files even if they are already
-  present. Use after upgrading herdle to refresh the embedded content.
-- `--uninstall` — remove the skills and rules that herdle installed, leaving
-  the rest of the project untouched.
+Claude assets live under `~/.claude/`. Polytoken assets live under
+`${XDG_CONFIG_HOME:-$HOME/.config}/polytoken`: two skills and `herdle.md` are
+Herdle-owned files, while only the named `herdle-gatekeeper` hook entry and
+marked Herdle block are owned inside shared `hooks.json` and `AGENTS.md`. The
+broad Polytoken `pre_tool_use` matcher `*` lets the gate observe every tool call;
+the handler allows unrelated operations and gates only relevant lifecycle edits.
+
+Flags:
+
+- `--agent` — choose `claude` or `polytoken`; repeat for both. Applies equally to
+  install, `--force`, and `--uninstall`.
+- `--force` — refresh Herdle-owned standalone files from the binary and update
+  managed shared-file entries without replacing unrelated user content.
+- `--uninstall` — remove selected Herdle-owned files/entries only, preserve
+  unrelated shared content and Herdle config, and skip config seeding.
+
+After install or upgrade, run `/reload` in Claude Code and start a new Polytoken
+session (or restart the Polytoken client) to load the changed global assets.
 
 ---
 
 ## Internal hook handlers
 
-herdle ships hidden subcommands under `herdle hook` for use by Claude Code's
-PreToolUse hook mechanism. These are not intended for direct use; Claude Code
-invokes them automatically when the hook is configured.
+herdle ships hidden subcommands under `herdle hook` for use by agent harness
+PreToolUse mechanisms. These are not intended for direct use; Claude Code and
+Polytoken invoke the appropriate configured command automatically. Polytoken's
+global hook appends `--agent polytoken` so payload parsing follows the harness's
+native event format.
 
 ### `herdle hook gatekeeper`
 
@@ -278,8 +307,11 @@ herdle hook gatekeeper
 Reads a PreToolUse hook JSON payload from stdin and enforces herdle lifecycle
 transitions. It gates three transitions:
 
-- **`lifecycle: pending-validation`** — both a `medium` and `high` `/code-review`
-  pass must appear in the session transcript. Override: `[skip-code-review-gate] <reason>`.
+- **`lifecycle: pending-validation`** — complete a standard review first and a
+  fresh deep review second, address each pass's findings, then record all four
+  durable review markers in the validation document. Claude transcripts use the
+  equivalent `medium` then `high` `/code-review` evidence. Override:
+  `[skip-code-review-gate] <reason>`.
 - **`lifecycle: validated`** — the ticket must already be at `pending-validation`
   (monotonic), a validation doc must exist under
   `docs/superpowers/validation/*<tkid>*`, and every checkbox in it must be
@@ -306,6 +338,6 @@ agent to see.
 | `herdle project add <path>` | add a project (flags: `--slug`, `--remote`, `--base`, `--integration`) |
 | `herdle project set <name>` | update a project (flags: `--slug`, `--remote`, `--base`, `--integration`) |
 | `herdle project rm <name>` | remove a project |
-| `herdle init` | write/refresh embedded skills + rules (`--force` overwrites after an upgrade; `--uninstall` removes them) |
+| `herdle init` | write/refresh embedded skills + context for selected harness (`--agent claude\|polytoken`, repeatable; `--force` overwrites; `--uninstall` removes) |
 | `herdle doctor` | diagnose the herdle setup |
 | `herdle hook gatekeeper` | (internal) PreToolUse gate enforcing herdle lifecycle transitions |

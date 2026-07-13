@@ -9,7 +9,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/doctor"
+	"github.com/geofffranks/herdle/internal/initcmd"
 	"github.com/geofffranks/herdle/internal/vcs/vcsfakes"
 )
 
@@ -68,6 +70,143 @@ func goodEnv() doctor.Env {
 		PathDirs:     []string{binDir},
 	}
 }
+
+func withHealthyPolytoken(env doctor.Env) doctor.Env {
+	polytoken := GinkgoT().TempDir()
+	polytokenFS := fstest.MapFS{
+		"herdle.md":                           {Data: []byte("context\n")},
+		"skills/herdle-tk-flow/SKILL.md":      {Data: []byte("flow\n")},
+		"skills/herdle-tk-artifacts/SKILL.md": {Data: []byte("artifacts\n")},
+	}
+	command := filepath.Join(filepath.Dir(env.ExecPath), "herdle") + " hook gatekeeper"
+	_, err := initcmd.InstallPolytoken(polytokenFS, polytoken, command, false)
+	Expect(err).NotTo(HaveOccurred())
+	env.PolytokenAssets = polytokenFS
+	env.PolytokenDir = polytoken
+	env.PolytokenHooksPath = filepath.Join(polytoken, "hooks.json")
+	env.PolytokenCommand = command
+	return env
+}
+
+func names(rs []doctor.Result) []string {
+	out := make([]string, len(rs))
+	for i, r := range rs {
+		out[i] = r.Name
+	}
+	return out
+}
+
+var _ = Describe("doctor harness composition", func() {
+	It("defaults an empty selection to Claude and runs common checks once", func() {
+		Expect(names(doctor.Run(goodEnv()))).To(Equal([]string{
+			"git", "tk", "gh", "gh auth", "glab", "glab auth", "herdle on PATH", "config",
+			"superpowers", "claude: skills + rule", "claude: lifecycle gatekeeper",
+		}))
+	})
+
+	It("runs only Polytoken harness checks without scanning Claude plugins", func() {
+		env := withHealthyPolytoken(goodEnv())
+		env.Agents = []agent.Name{agent.Polytoken}
+		Expect(os.RemoveAll(filepath.Join(env.ClaudeDir, "plugins"))).To(Succeed())
+		Expect(names(doctor.Run(env))).To(Equal([]string{
+			"git", "tk", "gh", "gh auth", "glab", "glab auth", "herdle on PATH", "config",
+			"polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper",
+		}))
+	})
+
+	It("appends dual harness rows in selected order while common rows remain singular", func() {
+		env := withHealthyPolytoken(goodEnv())
+		env.Agents = []agent.Name{agent.Polytoken, agent.Claude}
+		Expect(names(doctor.Run(env))).To(Equal([]string{
+			"git", "tk", "gh", "gh auth", "glab", "glab auth", "herdle on PATH", "config",
+			"polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper",
+			"superpowers", "claude: skills + rule", "claude: lifecycle gatekeeper",
+		}))
+	})
+})
+
+var _ = Describe("doctor Polytoken diagnostics", func() {
+	var env doctor.Env
+
+	BeforeEach(func() {
+		env = withHealthyPolytoken(goodEnv())
+		env.Agents = []agent.Name{agent.Polytoken}
+	})
+
+	It("reports every healthy Polytoken row OK", func() {
+		rs := doctor.Run(env)
+		for _, name := range []string{"polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper"} {
+			Expect(find(rs, name).Status).To(Equal(doctor.OK), name)
+		}
+	})
+
+	It("fails missing standalone content with the exact init command", func() {
+		Expect(os.Remove(filepath.Join(env.PolytokenDir, "herdle.md"))).To(Succeed())
+		r := find(doctor.Run(env), "polytoken: skills + context")
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Remediation).To(Equal("herdle init --agent polytoken"))
+	})
+
+	It("warns on drifted standalone content with the exact force command", func() {
+		Expect(os.WriteFile(filepath.Join(env.PolytokenDir, "herdle.md"), []byte("drifted\n"), 0o600)).To(Succeed())
+		r := find(doctor.Run(env), "polytoken: skills + context")
+		Expect(r.Status).To(Equal(doctor.Warn))
+		Expect(r.Remediation).To(Equal("herdle init --agent polytoken --force"))
+	})
+
+	It("fails a missing AGENTS.md link with the exact init command", func() {
+		Expect(os.Remove(filepath.Join(env.PolytokenDir, "AGENTS.md"))).To(Succeed())
+		r := find(doctor.Run(env), "polytoken: AGENTS.md link")
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Remediation).To(Equal("herdle init --agent polytoken"))
+	})
+
+	DescribeTable("fails malformed or duplicate AGENTS.md state through the shared inspector",
+		func(contents string) {
+			path := filepath.Join(env.PolytokenDir, "AGENTS.md")
+			Expect(os.WriteFile(path, []byte(contents), 0o600)).To(Succeed())
+			r := find(doctor.Run(env), "polytoken: AGENTS.md link")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring(path))
+			Expect(r.Remediation).To(Equal("repair " + path + ", then run: herdle init --agent polytoken"))
+		},
+		Entry("malformed", "<!-- herdle:begin -->\n"),
+		Entry("duplicate", "<!-- herdle:begin -->\n@herdle.md\n<!-- herdle:end -->\n<!-- herdle:begin -->\n@herdle.md\n<!-- herdle:end -->\n"),
+	)
+
+	It("fails a missing lifecycle hook with the exact init command", func() {
+		Expect(os.WriteFile(env.PolytokenHooksPath, []byte("[]\n"), 0o600)).To(Succeed())
+		r := find(doctor.Run(env), "polytoken: lifecycle gatekeeper")
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Remediation).To(Equal("herdle init --agent polytoken"))
+	})
+
+	DescribeTable("fails malformed or duplicate hook state through the shared inspector",
+		func(contents string) {
+			Expect(os.WriteFile(env.PolytokenHooksPath, []byte(contents), 0o600)).To(Succeed())
+			r := find(doctor.Run(env), "polytoken: lifecycle gatekeeper")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring(env.PolytokenHooksPath))
+			Expect(r.Remediation).To(Equal("repair " + env.PolytokenHooksPath + ", then run: herdle init --agent polytoken"))
+		},
+		Entry("malformed", "["),
+		Entry("duplicate", `[{"name":"herdle-gatekeeper","event":"pre_tool_use","matcher":"*","handler":{"bash":"one"}},{"name":"herdle-gatekeeper","event":"pre_tool_use","matcher":"*","handler":{"bash":"two"}}]`),
+	)
+
+	DescribeTable("fails stale hook fields with the exact init command",
+		func(event, matcher, command string) {
+			contents := `[{"name":"herdle-gatekeeper","event":"` + event + `","matcher":"` + matcher + `","handler":{"bash":"` + command + `"}}]`
+			Expect(os.WriteFile(env.PolytokenHooksPath, []byte(contents), 0o600)).To(Succeed())
+			r := find(doctor.Run(env), "polytoken: lifecycle gatekeeper")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring("stale"))
+			Expect(r.Remediation).To(Equal("herdle init --agent polytoken"))
+		},
+		Entry("event", "PreToolUse", "*", "current"),
+		Entry("matcher", "pre_tool_use", "Bash", "current"),
+		Entry("command", "pre_tool_use", "*", "stale"),
+	)
+})
 
 var _ = Describe("doctor core (git/tk)", func() {
 	It("reports git and tk OK when available", func() {
@@ -238,13 +377,13 @@ var _ = Describe("doctor herdle on PATH", func() {
 
 var _ = Describe("doctor install integrity", func() {
 	It("OK when every embedded artifact is present and current", func() {
-		Expect(find(doctor.Run(goodEnv()), "skills + rule").Status).To(Equal(doctor.OK))
+		Expect(find(doctor.Run(goodEnv()), "claude: skills + rule").Status).To(Equal(doctor.OK))
 	})
 
 	It("Fail listing a missing artifact", func() {
 		env := goodEnv()
 		Expect(os.Remove(filepath.Join(env.ClaudeDir, "rules", "herdle.md"))).To(Succeed())
-		r := find(doctor.Run(env), "skills + rule")
+		r := find(doctor.Run(env), "claude: skills + rule")
 		Expect(r.Status).To(Equal(doctor.Fail))
 		Expect(r.Detail).To(ContainSubstring("herdle.md"))
 		Expect(r.Remediation).To(ContainSubstring("herdle init"))
@@ -254,9 +393,29 @@ var _ = Describe("doctor install integrity", func() {
 		env := goodEnv()
 		Expect(os.WriteFile(filepath.Join(env.ClaudeDir, "rules", "herdle.md"),
 			[]byte("locally edited\n"), 0o600)).To(Succeed())
-		r := find(doctor.Run(env), "skills + rule")
+		r := find(doctor.Run(env), "claude: skills + rule")
 		Expect(r.Status).To(Equal(doctor.Warn))
 		Expect(r.Remediation).To(ContainSubstring("--force"))
+	})
+
+	It("fails clearly when selected Claude assets are unavailable", func() {
+		env := goodEnv()
+		env.Assets = nil
+		env.ClaudeAssets = nil
+		r := find(doctor.Run(env), "claude: skills + rule")
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Detail).To(ContainSubstring("asset filesystem is unavailable"))
+		Expect(r.Remediation).To(Equal("run: herdle init"))
+	})
+
+	It("fails clearly when selected Polytoken assets are unavailable", func() {
+		env := withHealthyPolytoken(goodEnv())
+		env.Agents = []agent.Name{agent.Polytoken}
+		env.PolytokenAssets = nil
+		r := find(doctor.Run(env), "polytoken: skills + context")
+		Expect(r.Status).To(Equal(doctor.Fail))
+		Expect(r.Detail).To(ContainSubstring("asset filesystem is unavailable"))
+		Expect(r.Remediation).To(Equal("herdle init --agent polytoken"))
 	})
 })
 

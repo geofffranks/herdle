@@ -11,7 +11,7 @@ herdle is a self-contained CLI binary. Download a prebuilt release, run
 |---|---|---|
 | `tk` (wedow/ticket) | required | `brew install wedow/tools/ticket` |
 | `git` | required | system / `brew install git` |
-| [superpowers](https://github.com/obra/superpowers) plugin | required (for the skills/rules to mean anything) | add its marketplace + `/plugin install` |
+| [superpowers](https://github.com/obra/superpowers) plugin | required for Claude Code skills (not needed for Polytoken) | add its marketplace + `/plugin install` |
 | `gh` (authenticated) | optional | `brew install gh && gh auth login` — enables GitHub PR/issue features |
 | `glab` (authenticated) | optional | `brew install glab && glab auth login` — enables GitLab MR features (gitlab.com and self-hosted; run `glab auth login --hostname <host>` per instance) |
 | GitHub- or GitLab-hosted remote | optional | enables PR/MR features per-project (forge detected from the remote host) |
@@ -61,55 +61,80 @@ The Unix steps above also work as-is under Git Bash or WSL.
 
 ## `herdle init`
 
-Run once after download (and after each upgrade):
+Run once after download (and after each upgrade), selecting one or both agent
+harnesses:
 
 ```sh
-herdle init
+herdle init                                   # Claude-compatible default
+herdle init --agent claude                    # explicit Claude-only setup
+herdle init --agent polytoken                 # Polytoken-only setup
+herdle init --agent claude --agent polytoken  # both; --agent is repeatable
 ```
 
-`herdle init` is idempotent — safe to run multiple times. It:
+Repeated names are deduplicated, and selected harnesses are installed in the
+order supplied. Bare `herdle init` is intentionally equivalent to
+`--agent claude` for backward compatibility. Selection is global only:
+`--agent polytoken` writes the user's Polytoken configuration and does not offer
+or create a project-local installation.
 
-- Writes convention skills → `~/.claude/skills/` (`herdle-tk-flow/`,
-  `herdle-tk-artifacts/`)
-- Writes a rule stub → `~/.claude/rules/herdle.md`
-- Seeds `~/.config/herdle/config.toml` on first run
-- Migrates `~/.config/wip/projects` if present (imports existing project list)
+`herdle init` is idempotent — safe to run multiple times. Claude setup writes:
 
-Existing files are left untouched unless `--force` is passed.
+- `~/.claude/skills/herdle-tk-flow/SKILL.md`
+- `~/.claude/skills/herdle-tk-artifacts/SKILL.md`
+- `~/.claude/rules/herdle.md`
+- a managed lifecycle hook in `~/.claude/settings.json`
+
+Polytoken setup uses `${XDG_CONFIG_HOME:-$HOME/.config}/polytoken` (called
+`$POLYTOKEN_CONFIG` below) and writes or merges:
+
+- `$POLYTOKEN_CONFIG/skills/herdle-tk-flow/SKILL.md`
+- `$POLYTOKEN_CONFIG/skills/herdle-tk-artifacts/SKILL.md`
+- `$POLYTOKEN_CONFIG/herdle.md`
+- one named `herdle-gatekeeper` entry in `$POLYTOKEN_CONFIG/hooks.json`
+- one `<!-- herdle:begin -->` … `<!-- herdle:end -->` block in
+  `$POLYTOKEN_CONFIG/AGENTS.md` that includes `@herdle.md`
+
+The two skills and `herdle.md` are Herdle-owned standalone files. `hooks.json`
+and `AGENTS.md` are shared, user-owned files: Herdle updates only its named hook
+and marked block and preserves all unrelated entries and bytes. The Polytoken
+hook intentionally uses the broad `pre_tool_use` matcher `*`; the gatekeeper
+inspects each operation and acts only on relevant lifecycle edits.
+
+After every selected harness succeeds, init seeds
+`${XDG_CONFIG_HOME:-$HOME/.config}/herdle/config.toml` once on first run and
+migrates `~/.config/wip/projects` if present. A failed multi-harness install does
+not seed config. Existing standalone files are left untouched unless `--force`
+is passed.
+
+Reload the harness after install or upgrade: use `/reload` in Claude Code, and
+start a new Polytoken session (or restart the current Polytoken client) so its
+global skills, `AGENTS.md` context, and hooks are reread.
 
 ---
 
 ## Verify
 
-Run `herdle doctor` to confirm all dependencies and files are in order:
+Run `herdle doctor` with the same selection forms as init:
 
 ```sh
-herdle doctor
+herdle doctor                                   # Claude-compatible default
+herdle doctor --agent polytoken                 # Polytoken rows only
+herdle doctor --agent claude --agent polytoken  # both harnesses
 ```
 
-Sample output:
+Common dependency/config rows are rendered once. Claude adds `superpowers`,
+`claude: skills + rule`, and `claude: lifecycle gatekeeper`. Polytoken adds:
 
-```
-herdle 734e250-dirty
+- `polytoken: skills + context`
+- `polytoken: AGENTS.md link`
+- `polytoken: lifecycle gatekeeper`
 
-  ✓ git            found
-  ✓ tk             found
-  ✓ gh             found
-  ✓ gh auth        authenticated
-  ✓ glab           found
-  ✓ glab auth      authenticated
-  ✓ superpowers    found under /Users/gfranks/.claude/plugins
-  ✓ herdle on PATH on PATH as herdle
-  ✗ skills + rule  3 missing: /Users/gfranks/.claude/rules/herdle.md, /Users/gfranks/.claude/skills/herdle-tk-artifacts/SKILL.md, /Users/gfranks/.claude/skills/herdle-tk-flow/SKILL.md
-      → run: herdle init
-  ✗ config         not found at /Users/gfranks/.config/herdle/config.toml
-      → run: herdle init
-herdle doctor: 2 check(s) need attention
-```
-
-`herdle doctor` exits non-zero if any required dependency is missing or
-configuration is incomplete. Run `herdle init` to resolve the items flagged with
-`✗`.
+Doctor verifies the exact installed content, managed context markers, and hook
+command. A missing row points to `herdle init --agent polytoken`; stale standalone
+content points to `herdle init --agent polytoken --force`; malformed shared files
+must be repaired before rerunning init. `herdle doctor` exits non-zero if any
+required dependency is missing or configuration is incomplete, making it useful
+in scripts and CI.
 
 ---
 
@@ -117,23 +142,32 @@ configuration is incomplete. Run `herdle init` to resolve the items flagged with
 
 1. Download the new binary for your platform (see [Download](#download)) and replace the
    existing binary on your `PATH`.
-2. Re-lay the skills and rules:
+2. Refresh each installed harness:
 
 ```sh
-herdle init --force
+herdle init --force                                   # Claude default
+herdle init --agent polytoken --force                 # Polytoken only
+herdle init --agent claude --agent polytoken --force  # both
 ```
 
-`--force` overwrites previously installed skill and rule files with the versions
-embedded in the new binary. Config (`~/.config/herdle/`) is not affected.
+`--force` overwrites Herdle-owned standalone skill/rule/context files with the
+versions embedded in the new binary. Managed shared-file entries are refreshed
+surgically. Herdle config (`${XDG_CONFIG_HOME:-$HOME/.config}/herdle`) and unrelated
+harness content are not affected. Reload/restart each selected harness afterward.
 
 ---
 
 ## Uninstall
 
 ```sh
-herdle init --uninstall
+herdle init --uninstall                                   # Claude default
+herdle init --agent polytoken --uninstall                 # Polytoken only
+herdle init --agent claude --agent polytoken --uninstall  # both
 ```
 
-This removes only the skill and rule files herdle installed
-(`~/.claude/skills/herdle-*/` and `~/.claude/rules/herdle.md`). It never edits
-`CLAUDE.md` and leaves `~/.config/herdle/` in place.
+Claude uninstall removes Herdle's skills/rule and lifecycle hook, never edits
+`CLAUDE.md`, and leaves Herdle config in place. Polytoken uninstall removes the
+two Herdle skill files and `herdle.md`, removes only the named hook from
+`hooks.json`, and removes only the marked block from `AGENTS.md`; the shared
+files and unrelated user content remain. Uninstall never reseeds or deletes
+`${XDG_CONFIG_HOME:-$HOME/.config}/herdle`.

@@ -179,6 +179,20 @@ var _ = Describe("baseDir-backed path helpers", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(p).To(Equal(filepath.Join(claudeDir, "projects")))
 	})
+
+	It("PolytokenDir() falls back to $HOME/.config/polytoken", func() {
+		p, err := config.PolytokenDir()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p).To(Equal(filepath.Join(fakeHome, ".config", "polytoken")))
+	})
+
+	It("PolytokenDir() honours XDG_CONFIG_HOME", func() {
+		xdg := GinkgoT().TempDir()
+		os.Setenv("XDG_CONFIG_HOME", xdg)
+		p, err := config.PolytokenDir()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(p).To(Equal(filepath.Join(xdg, "polytoken")))
+	})
 })
 
 var _ = Describe("SettingsPath", func() {

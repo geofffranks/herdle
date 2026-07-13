@@ -97,10 +97,49 @@ always include it.
 
 ---
 
+## Review evidence and lifecycle order
+
+Every implementation plan ends with separate **Code Review** and **Finalize**
+tasks. Code Review always runs two independent passes in order, regardless of
+diff size:
+
+1. **Standard review** inspects the full branch diff against its base; address
+   every valid finding and verify the fixes.
+2. **Deep review** starts with fresh reviewer context and broader scrutiny of
+   correctness, regressions, maintainability, and requirement compliance;
+   address every valid finding and rerun verification.
+
+Do not reuse the standard pass as the deep pass or replace either with informal
+self-review. Record durable evidence in this exact order, leaving each marker
+unchecked until that review or findings work is actually complete:
+
+```markdown
+## Herdle code review
+
+- [ ] Standard review completed
+- [ ] Standard review findings addressed
+- [ ] Deep review completed
+- [ ] Deep review findings addressed
+```
+
+Only after both passes, their fixes, and all four checked markers are on disk may
+the ticket move to `pending-validation`. Check automated validation boxes only
+for commands actually run; leave human-only boxes open and do not move to
+`validated` until a human completes them.
+
+---
+
 ## The installed skills are authoritative
 
-`herdle init` installs two skills under `~/.claude/skills/` and a rule stub
-under `~/.claude/rules/`:
+Bare `herdle init` is the Claude-compatible default; repeat `--agent` to install
+both harnesses. `herdle init --agent polytoken` installs globally only—there is
+no project-local mode. For Claude Code, the two skills live under
+`~/.claude/skills/` with a rules stub at `~/.claude/rules/herdle.md`. For
+Polytoken, they live under
+`${XDG_CONFIG_HOME:-$HOME/.config}/polytoken/skills/` with a context file at
+`herdle.md` linked from a marked block in `AGENTS.md`. Reload Claude with
+`/reload`; start a new Polytoken session or restart its client after changes.
+Both harnesses install the same two skills with harness-native wording:
 
 - **`herdle-tk-flow`** — the lifecycle, correlation, and dashboard-reading
   conventions. Use this skill when tracking work, starting feature work, or
@@ -109,8 +148,9 @@ under `~/.claude/rules/`:
   stamping, and the Setup/Finalize tasks baked into every implementation plan.
   Use this skill when producing design artifacts under the `superpowers:*`
   process skills.
-- **`~/.claude/rules/herdle.md`** — a short always-on rule stub that orients an
-  agent toward these two skills without spelling out the full convention.
+- **Claude** `~/.claude/rules/herdle.md` / **Polytoken** `herdle.md` — a short
+  always-on context file that orients an agent toward these two skills without
+  spelling out the full convention.
 
 Those skills are the agent-facing source of truth. This page is a human
 orientation only — it does not repeat the skills verbatim and will not stay

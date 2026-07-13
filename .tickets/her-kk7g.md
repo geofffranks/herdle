@@ -8,7 +8,8 @@ type: feature
 priority: 2
 assignee: Geoff Franks
 spec: docs/superpowers/specs/2026-07-12-her-kk7g-polytoken-agent-installation-design.md
-lifecycle: designed
+plan: docs/superpowers/plans/2026-07-12-her-kk7g-polytoken-agent-installation.md
+lifecycle: planned
 ---
 # Add Polytoken agent installation support
 

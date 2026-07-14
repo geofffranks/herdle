@@ -92,7 +92,7 @@ var _ = Describe("Polytoken", func() {
 		}))
 	})
 
-	It("reports Merged when appending into foreign files and Overwritten when refreshing managed content", func() {
+	It("reports Merged on append, Skipped when already correct, and Overwritten when refreshing stale content", func() {
 		dir := GinkgoT().TempDir()
 		hooksPath := filepath.Join(dir, "hooks.json")
 		agentsPath := filepath.Join(dir, "AGENTS.md")
@@ -100,16 +100,25 @@ var _ = Describe("Polytoken", func() {
 		Expect(os.WriteFile(hooksPath, []byte("[{\"name\":\"other\",\"event\":\"session_start\"}]\n"), 0o600)).To(Succeed())
 		Expect(os.WriteFile(agentsPath, []byte("# My notes\n"), 0o644)).To(Succeed())
 
+		// First install appends managed content alongside the foreign content.
 		results, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(results).To(ContainElement(initcmd.Result{Path: hooksPath, Action: initcmd.Merged}))
 		Expect(results).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Merged}))
 
-		// Re-running refreshes the now-managed hook/block and reports Overwritten.
+		// Re-running with correct managed content is a no-op.
 		results2, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(results2).To(ContainElement(initcmd.Result{Path: hooksPath, Action: initcmd.Overwritten}))
-		Expect(results2).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Overwritten}))
+		Expect(results2).To(ContainElement(initcmd.Result{Path: hooksPath, Action: initcmd.Skipped}))
+		Expect(results2).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Skipped}))
+
+		// Corrupt the managed content; re-running refreshes it.
+		Expect(os.WriteFile(hooksPath, []byte("[{\"name\":\"herdle-gatekeeper\",\"event\":\"old\",\"matcher\":\"old\",\"handler\":{\"bash\":\"old\"}}]\n"), 0o600)).To(Succeed())
+		Expect(os.WriteFile(agentsPath, []byte("before\n<!-- herdle:begin -->\nstale\n<!-- herdle:end -->\nafter\n"), 0o644)).To(Succeed())
+		results3, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(results3).To(ContainElement(initcmd.Result{Path: hooksPath, Action: initcmd.Overwritten}))
+		Expect(results3).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Overwritten}))
 	})
 
 	It("inspects the exact installed hook and context through the shared parsers", func() {

@@ -134,12 +134,12 @@ func mergePolytokenHooks(path, command string) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("%s: encode hook: %w", path, err)
 	}
-	action := Written
-	switch {
-	case parsed.index >= 0:
-		action = Overwritten // refreshed an existing managed hook
-	case parsed.exists:
-		action = Merged // appended managed hook alongside existing content
+	// Serialize the current entries before mutation so a re-run that would not
+	// change anything is a no-op (Skipped). MarshalIndent canonicalizes each
+	// entry, so logical equality — even across formatting drift — is enough.
+	before, err := json.MarshalIndent(parsed.entries, "", "  ")
+	if err != nil {
+		return Result{}, fmt.Errorf("%s: encode hooks: %w", path, err)
 	}
 	if parsed.index >= 0 {
 		parsed.entries[parsed.index] = raw
@@ -151,6 +151,16 @@ func mergePolytokenHooks(path, command string) (Result, error) {
 		return Result{}, fmt.Errorf("%s: encode hooks: %w", path, err)
 	}
 	data = append(data, '\n')
+	if parsed.exists && bytes.Equal(append(before, '\n'), data) {
+		return Result{Path: path, Action: Skipped}, nil
+	}
+	action := Written
+	switch {
+	case parsed.index >= 0:
+		action = Overwritten // refreshed a stale managed hook
+	case parsed.exists:
+		action = Merged // appended managed hook alongside existing content
+	}
 	if !parsed.exists {
 		mode = 0o600
 	}
@@ -220,6 +230,11 @@ func mergeAgentContext(path string) (Result, error) {
 	parsed, mode, err := parseAgentContext(path)
 	if err != nil {
 		return Result{}, err
+	}
+	// Idempotent: the managed block is already present and exact, so there is
+	// nothing to write.
+	if parsed.count == 1 && parsed.exact {
+		return Result{Path: path, Action: Skipped}, nil
 	}
 	action := Written
 	switch {

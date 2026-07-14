@@ -85,7 +85,12 @@ after the corresponding work is complete:
 Then:
 
 - add concrete **automated** and **human** validation sections;
-- run automated validation and check only the steps it actually covered;
+- dispatch the `validator` subagent (defined in
+  `~/.config/polytoken/subagents/validator.md`) with the validation-document
+  path. It runs each validation item, captures command output as evidence, and
+  returns `pass` / `fail` / `partial`. Mark only the steps its run actually
+  covered. If it reports `fail` or `partial`, fix the defects and re-dispatch
+  before checking the corresponding boxes;
 - leave human-only steps unchecked;
 - only after both review passes, fixes, and the four markers are on disk, set
   `lifecycle: pending-validation`;

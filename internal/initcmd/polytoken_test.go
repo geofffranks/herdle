@@ -92,6 +92,26 @@ var _ = Describe("Polytoken", func() {
 		}))
 	})
 
+	It("reports Merged when appending into foreign files and Overwritten when refreshing managed content", func() {
+		dir := GinkgoT().TempDir()
+		hooksPath := filepath.Join(dir, "hooks.json")
+		agentsPath := filepath.Join(dir, "AGENTS.md")
+		// Foreign content, no Herdle-managed hook/block yet.
+		Expect(os.WriteFile(hooksPath, []byte("[{\"name\":\"other\",\"event\":\"session_start\"}]\n"), 0o600)).To(Succeed())
+		Expect(os.WriteFile(agentsPath, []byte("# My notes\n"), 0o644)).To(Succeed())
+
+		results, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(results).To(ContainElement(initcmd.Result{Path: hooksPath, Action: initcmd.Merged}))
+		Expect(results).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Merged}))
+
+		// Re-running refreshes the now-managed hook/block and reports Overwritten.
+		results2, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(results2).To(ContainElement(initcmd.Result{Path: hooksPath, Action: initcmd.Overwritten}))
+		Expect(results2).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Overwritten}))
+	})
+
 	It("inspects the exact installed hook and context through the shared parsers", func() {
 		dir := GinkgoT().TempDir()
 		_, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
@@ -226,7 +246,7 @@ var _ = Describe("Polytoken", func() {
 		Entry("0000", os.FileMode(0o000)),
 	)
 
-	DescribeTable("reports an existing empty AGENTS.md as overwritten and preserves its mode",
+	DescribeTable("reports an existing empty AGENTS.md as merged and preserves its mode",
 		func(mode os.FileMode) {
 			dir := GinkgoT().TempDir()
 			path := filepath.Join(dir, "AGENTS.md")
@@ -235,7 +255,7 @@ var _ = Describe("Polytoken", func() {
 
 			results, err := initcmd.InstallPolytoken(polytokenFS(), dir, gatekeeperCommand, false)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(results).To(ContainElement(initcmd.Result{Path: path, Action: initcmd.Overwritten}))
+			Expect(results).To(ContainElement(initcmd.Result{Path: path, Action: initcmd.Merged}))
 			Expect(fileMode(path)).To(Equal(mode))
 		},
 		Entry("0640", os.FileMode(0o640)),

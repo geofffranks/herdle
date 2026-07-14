@@ -135,8 +135,11 @@ func mergePolytokenHooks(path, command string) (Result, error) {
 		return Result{}, fmt.Errorf("%s: encode hook: %w", path, err)
 	}
 	action := Written
-	if parsed.exists {
-		action = Overwritten
+	switch {
+	case parsed.index >= 0:
+		action = Overwritten // refreshed an existing managed hook
+	case parsed.exists:
+		action = Merged // appended managed hook alongside existing content
 	}
 	if parsed.index >= 0 {
 		parsed.entries[parsed.index] = raw
@@ -219,8 +222,11 @@ func mergeAgentContext(path string) (Result, error) {
 		return Result{}, err
 	}
 	action := Written
-	if parsed.exists {
-		action = Overwritten
+	switch {
+	case parsed.count == 1:
+		action = Overwritten // refreshed an existing managed block
+	case parsed.exists:
+		action = Merged // appended managed block to an existing file
 	}
 	var data []byte
 	if parsed.count == 1 {

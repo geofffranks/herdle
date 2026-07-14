@@ -17,6 +17,7 @@ type Action string
 
 const (
 	Written     Action = "written"
+	Merged      Action = "merged" // appended managed content into an existing shared file
 	Overwritten Action = "overwritten"
 	Skipped     Action = "skipped" // already present; Install without force
 	Removed     Action = "removed"

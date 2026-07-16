@@ -123,6 +123,15 @@ func InspectAgentContext(path string) (AgentContextInspection, error) {
 	return AgentContextInspection{Count: parsed.count, Exact: parsed.exact}, nil
 }
 
+// PolytokenGatekeeperCommand builds the pre_tool_use hook command. It resolves
+// herdle via $HOME/bin/herdle rather than baking in the absolute os.Executable
+// path, so the shared config works across machines and containers. It fails
+// open (allows) when herdle is absent.
+func PolytokenGatekeeperCommand() string {
+	const herdle = "$HOME/bin/herdle"
+	return fmt.Sprintf("if [ -x %q ]; then exec %q hook gatekeeper --agent polytoken; else exit 0; fi", herdle, herdle)
+}
+
 func mergePolytokenHooks(path, command string) (Result, error) {
 	parsed, mode, err := parsePolytokenHooks(path)
 	if err != nil {

@@ -75,7 +75,7 @@ func initAction(c *cli.Context) error {
 			if uninstall {
 				results, err = initcmd.UninstallPolytoken(assets.PolytokenFS, polytokenDir)
 			} else {
-				results, err = initcmd.InstallPolytoken(assets.PolytokenFS, polytokenDir, exe+" hook gatekeeper --agent polytoken", c.Bool("force"))
+				results, err = initcmd.InstallPolytoken(assets.PolytokenFS, polytokenDir, initcmd.PolytokenGatekeeperCommand(), c.Bool("force"))
 			}
 		}
 		for _, result := range results {

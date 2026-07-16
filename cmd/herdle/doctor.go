@@ -12,6 +12,7 @@ import (
 	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/config"
 	"github.com/geofffranks/herdle/internal/doctor"
+	"github.com/geofffranks/herdle/internal/initcmd"
 	"github.com/geofffranks/herdle/internal/render"
 	"github.com/geofffranks/herdle/internal/vcs"
 )
@@ -81,7 +82,7 @@ func buildDoctorEnv(selected []agent.Name) (doctor.Env, error) {
 		ClaudeDir:          claudeDir,
 		PolytokenDir:       polytokenDir,
 		PolytokenHooksPath: filepath.Join(polytokenDir, "hooks.json"),
-		PolytokenCommand:   exe + " hook gatekeeper --agent polytoken",
+		PolytokenCommand:   initcmd.PolytokenGatekeeperCommand(),
 		ConfigPath:         configPath,
 		SettingsPath:       settingsPath,
 		ExecPath:           exe,

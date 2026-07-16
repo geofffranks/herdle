@@ -12,6 +12,7 @@ import (
 
 	"github.com/geofffranks/herdle/assets"
 	"github.com/geofffranks/herdle/internal/agent"
+	"github.com/geofffranks/herdle/internal/initcmd"
 )
 
 var _ = Describe("herdle doctor", func() {
@@ -59,15 +60,13 @@ var _ = Describe("herdle doctor", func() {
 		GinkgoT().Setenv("XDG_CONFIG_HOME", xdg)
 		env, err := buildDoctorEnv([]agent.Name{agent.Polytoken, agent.Claude})
 		Expect(err).NotTo(HaveOccurred())
-		exe, err := os.Executable()
-		Expect(err).NotTo(HaveOccurred())
 		Expect(env.Agents).To(Equal([]agent.Name{agent.Polytoken, agent.Claude}))
 		Expect(env.ClaudeAssets).To(Equal(assets.ClaudeFS))
 		Expect(env.PolytokenAssets).To(Equal(assets.PolytokenFS))
 		Expect(env.ClaudeDir).To(Equal(filepath.Join(home, ".claude")))
 		Expect(env.PolytokenDir).To(Equal(filepath.Join(xdg, "polytoken")))
 		Expect(env.PolytokenHooksPath).To(Equal(filepath.Join(xdg, "polytoken", "hooks.json")))
-		Expect(env.PolytokenCommand).To(Equal(exe + " hook gatekeeper --agent polytoken"))
+		Expect(env.PolytokenCommand).To(Equal(initcmd.PolytokenGatekeeperCommand()))
 	})
 
 	It("renders only Polytoken harness rows when selected", func() {

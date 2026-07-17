@@ -123,13 +123,16 @@ func InspectAgentContext(path string) (AgentContextInspection, error) {
 	return AgentContextInspection{Count: parsed.count, Exact: parsed.exact}, nil
 }
 
-// PolytokenGatekeeperCommand builds the pre_tool_use hook command. It resolves
-// herdle via $HOME/bin/herdle rather than baking in the absolute os.Executable
-// path, so the shared config works across machines and containers. It fails
-// open (allows) when herdle is absent.
+// PolytokenGatekeeperCommand builds the pre_tool_use hook command. It prefers a
+// native herdle binary ($HOME/bin/herdle); when that is absent — e.g. inside a
+// container without a prebuilt binary — it builds from source into a cached
+// binary and execs that. We build and exec the binary rather than using `go
+// run` because go run mangles non-zero exit codes to 1, which would turn
+// herdle's exit 2 (deny) into an error-classified block instead of a clean
+// deny. The cached binary is rebuilt only when a tracked source file changes.
+// If herdle is unavailable on either path the command fails open (allows).
 func PolytokenGatekeeperCommand() string {
-	const herdle = "$HOME/bin/herdle"
-	return fmt.Sprintf("if [ -x %q ]; then exec %q hook gatekeeper --agent polytoken; else exit 0; fi", herdle, herdle)
+	return `h="$HOME/bin/herdle"; if [ -x "$h" ]; then exec "$h" hook gatekeeper --agent polytoken; elif [ -d "$HOME/workspace/herdle/cmd/herdle" ]; then b="${XDG_CACHE_HOME:-$HOME/.cache}/herdle/gatekeeper"; if [ ! -x "$b" ] || find "$HOME/workspace/herdle" \( -name '*.go' -o -name 'go.mod' -o -name 'go.sum' \) -newer "$b" -print -quit 2>/dev/null | grep -q .; then mkdir -p "$(dirname "$b")"; ( cd "$HOME/workspace/herdle" && go build -o "$b" ./cmd/herdle ) || exit 0; fi; exec "$b" hook gatekeeper --agent polytoken; else exit 0; fi`
 }
 
 func mergePolytokenHooks(path, command string) (Result, error) {

@@ -547,9 +547,11 @@ func (e Engine) artifactRows(path string) []ArtifactRow {
 		}
 	}
 	// Feature-dir layout: docs/superpowers/<tkid>-<slug>/{design_spec,plan,validation}.md.
-	// The tkid comes from the dir name, the kind from the filename. Skip the fixed
-	// subdirs above — real filepath.Glob surfaces their files here too, and the kind
-	// loop already listed them.
+	// The tkid comes from the dir name, the kind from the filename. The filename
+	// is dir-prefixed (e.g. <tkid>-<slug>/design_spec.md) so each feature's rows
+	// stay distinguishable — bare design_spec.md/plan.md/validation.md collide
+	// across features. Skip the fixed subdirs above — real filepath.Glob surfaces
+	// their files here too, and the kind loop already listed them.
 	feat, _ := e.glob(filepath.Join(path, "docs/superpowers", "*", "*.md"))
 	sort.Strings(feat)
 	for _, m := range feat {
@@ -561,7 +563,7 @@ func (e Engine) artifactRows(path string) []ArtifactRow {
 		if kind == "" {
 			continue
 		}
-		rows = append(rows, ArtifactRow{TKID: artifactID(dir, ids), Kind: kind, Filename: filepath.Base(m)})
+		rows = append(rows, ArtifactRow{TKID: artifactID(dir, ids), Kind: kind, Filename: filepath.Join(dir, filepath.Base(m))})
 	}
 	return rows
 }

@@ -540,10 +540,12 @@ var _ = Describe("Engine up-next + artifacts", func() {
 			}
 		}
 		Expect(count).To(Equal(1))
-		// feature-dir files: tkid from the dir name, kind derived from the filename
-		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "specs", Filename: "design_spec.md"}))
-		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "plans", Filename: "plan.md"}))
-		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "validation", Filename: "validation.md"}))
+		// feature-dir files: tkid from the dir name, kind derived from the
+		// filename; the dir prefixes the filename so each feature's rows are
+		// distinguishable (otherwise every feature shows bare design_spec.md etc.)
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "specs", Filename: "her-ju9h-x/design_spec.md"}))
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "plans", Filename: "her-ju9h-x/plan.md"}))
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "validation", Filename: "her-ju9h-x/validation.md"}))
 	})
 })
 

@@ -353,14 +353,19 @@ type ReviewEvidence struct {
 func ClaudeReviewEvidence(r io.Reader, ticketPath string) ReviewEvidence {
 	ev := ReviewEvidence{
 		ReadOK:        r != nil,
-		Required:      []string{"medium", "high"},
+		Required:      []string{"code-review"},
 		Present:       map[string]bool{},
 		Unreadable:    failClosedReason,
 		BlockedIntro:  claudeBlockedIntro,
 		BlockedSuffix: claudeBlockedSuffix,
 	}
 	if r != nil {
-		ev.Present = EffortsFromTranscript(r, ticketPath)
+		// One /code-review pass suffices; any recognized effort (medium or high)
+		// satisfies the single requirement.
+		efforts := EffortsFromTranscript(r, ticketPath)
+		if efforts["medium"] || efforts["high"] {
+			ev.Present["code-review"] = true
+		}
 	}
 	return ev
 }
@@ -547,10 +552,10 @@ func decideInDevelopment(in HookInput, env Env) Decision {
 	return Decision{Allow: false, Reason: branchLinkageReason}
 }
 
-const failClosedReason = "Gatekeeper: cannot read the session transcript to verify the /code-review passes. " +
-	"Re-run after invoking the code-review Skill for medium and high, or add [skip-code-review-gate] <reason>."
+const failClosedReason = "Gatekeeper: cannot read the session transcript to verify the /code-review pass. " +
+	"Re-run after invoking the code-review Skill (medium or high), or add [skip-code-review-gate] <reason>."
 
-const claudeBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires both /code-review passes this session. " +
+const claudeBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires a /code-review pass this session. " +
 	"Missing: "
 
 const claudeBlockedSuffix = " Invoke the code-review Skill directly (not a hand-rolled sweep or a subagent), " +

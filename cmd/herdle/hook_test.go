@@ -73,8 +73,13 @@ var _ = Describe("runGatekeeper Claude compatibility", func() {
 			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
 			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeTrue())
 		})
-		It("blocks when a pass is missing", func() {
+		It("allows a single pass", func() {
 			tp := writeTranscript(skill("medium"))
+			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
+			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeTrue())
+		})
+		It("blocks when no pass is present", func() {
+			tp := writeTranscript("{}")
 			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
 			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeFalse())
 		})
@@ -106,7 +111,7 @@ var _ = Describe("runGatekeeper Claude compatibility", func() {
 		})
 		It("still blocks a forward bump from in-development missing a pass", func() {
 			repo, ticket := writeRepoTicket("in-development")
-			tp := writeTranscript(skill("medium")) // only one pass
+			tp := writeTranscript("{}") // no review pass
 			ns, _ := json.Marshal("lifecycle: pending-validation\n")
 			ti := `{"file_path":"` + ticket + `","new_string":` + string(ns) + `}`
 			in := strings.NewReader(`{"tool_name":"Edit","tool_input":` + ti + `,"cwd":"` + repo + `","transcript_path":"` + tp + `"}`)

@@ -339,12 +339,18 @@ var _ = Describe("Decide", func() {
 		It("allows when both passes are present", func() {
 			Expect(gate.Decide(in, env(strings.NewReader(bothReviews))).Allow).To(BeTrue())
 		})
-		It("blocks and names the missing pass with the exact legacy Claude reason", func() {
-			d := gate.Decide(in, env(strings.NewReader(skill("medium")+"\n")))
+		It("allows a single medium pass", func() {
+			Expect(gate.Decide(in, env(strings.NewReader(skill("medium")+"\n"))).Allow).To(BeTrue())
+		})
+		It("allows a single high pass", func() {
+			Expect(gate.Decide(in, env(strings.NewReader(skill("high")+"\n"))).Allow).To(BeTrue())
+		})
+		It("blocks and names the requirement when no pass is present", func() {
+			d := gate.Decide(in, env(strings.NewReader("{}\n"))) // readable transcript, zero passes
 			Expect(d.Allow).To(BeFalse())
-			Expect(d.Missing).To(Equal([]string{"high"}))
-			Expect(d.Reason).To(Equal("Gatekeeper: lifecycle:pending-validation requires both /code-review passes this session. " +
-				"Missing: high. Invoke the code-review Skill directly (not a hand-rolled sweep or a subagent), " +
+			Expect(d.Missing).To(Equal([]string{"code-review"}))
+			Expect(d.Reason).To(Equal("Gatekeeper: lifecycle:pending-validation requires a /code-review pass this session. " +
+				"Missing: code-review. Invoke the code-review Skill directly (not a hand-rolled sweep or a subagent), " +
 				"or add [skip-code-review-gate] <reason>."))
 		})
 		It("formats a harness-specific suffix without inspecting the intro text", func() {
@@ -375,7 +381,7 @@ var _ = Describe("Decide", func() {
 		})
 		It("still gates a forward bump from in-development (no rollback)", func() {
 			e := envDisk("in-development")
-			e.ReviewEvidence = gate.ClaudeReviewEvidence(strings.NewReader(skill("medium")+"\n"), ticket) // only one pass
+			e.ReviewEvidence = gate.ClaudeReviewEvidence(strings.NewReader("{}\n"), ticket) // no review pass
 			Expect(gate.Decide(in, e).Allow).To(BeFalse())
 		})
 		It("does not treat a body line as the on-disk state (no rollback short-circuit)", func() {

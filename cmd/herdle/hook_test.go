@@ -154,6 +154,16 @@ var _ = Describe("runGatekeeper Claude compatibility", func() {
 			repo, ticket := writeRepo("in-development", "- [ ] human\n")
 			Expect(run(repo, ticket, "[skip-validation-gate] signed off offline\n").Allow).To(BeTrue())
 		})
+		It("reads a feature-dir validation doc (docs/superpowers/<tkid>-<slug>/validation.md)", func() {
+			repo := GinkgoT().TempDir()
+			Expect(os.MkdirAll(filepath.Join(repo, ".tickets"), 0o750)).To(Succeed())
+			ticket := filepath.Join(repo, ".tickets", "her-a4lq.md")
+			Expect(os.WriteFile(ticket, []byte("---\nid: her-a4lq\nlifecycle: pending-validation\n---\n"), 0o600)).To(Succeed())
+			fdir := filepath.Join(repo, "docs", "superpowers", "her-a4lq-merged-flow")
+			Expect(os.MkdirAll(fdir, 0o750)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(fdir, "validation.md"), []byte("- [x] auto\n- [x] human\n"), 0o600)).To(Succeed())
+			Expect(run(repo, ticket, "").Allow).To(BeTrue())
+		})
 	})
 
 	Describe("in-development", func() {

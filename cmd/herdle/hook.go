@@ -238,9 +238,19 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 		return nil, false, false
 	}
 	tkid := strings.TrimSuffix(filepath.Base(absTicket), ".md")
-	pattern := filepath.Join(root, "docs", "superpowers", "validation", "*"+tkid+"*")
-	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
+	// Two layouts, unioned: the legacy validation/ subdir and the feature-dir
+	// layout (docs/superpowers/<tkid>-<slug>/*validation*).
+	legacy := filepath.Join(root, "docs", "superpowers", "validation", "*"+tkid+"*")
+	feature := filepath.Join(root, "docs", "superpowers", "*"+tkid+"*", "*validation*")
+	var matches []string
+	for _, pattern := range []string{legacy, feature} {
+		m, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, false, false
+		}
+		matches = append(matches, m...)
+	}
+	if len(matches) == 0 {
 		return nil, false, false
 	}
 	allReadable = true

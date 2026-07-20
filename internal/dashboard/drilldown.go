@@ -294,10 +294,15 @@ func (e Engine) effectiveLifecycle(path string, t vcs.Ticket) string {
 	if t.Lifecycle != "" && t.Lifecycle != "-" {
 		return t.Lifecycle
 	}
-	if e.globHit(filepath.Join(path, "docs/superpowers/plans", "*"+t.ID+"*")) {
+	// Two layouts, unioned: the legacy fixed subdirs ({specs,plans}/*<id>*) and
+	// the feature-dir layout (docs/superpowers/<id>-<slug>/{design_spec,plan}.md).
+	// planned wins over designed because a full-plan feature dir holds both files.
+	if e.globHit(filepath.Join(path, "docs/superpowers/plans", "*"+t.ID+"*")) ||
+		e.globHit(filepath.Join(path, "docs/superpowers", "*"+t.ID+"*", "plan.md")) {
 		return "planned"
 	}
-	if e.globHit(filepath.Join(path, "docs/superpowers/specs", "*"+t.ID+"*")) {
+	if e.globHit(filepath.Join(path, "docs/superpowers/specs", "*"+t.ID+"*")) ||
+		e.globHit(filepath.Join(path, "docs/superpowers", "*"+t.ID+"*", "design_spec.md")) {
 		return "designed"
 	}
 	if t.Lifecycle == "-" {
@@ -532,6 +537,7 @@ func artifactID(filename string, ids []string) string {
 func (e Engine) artifactRows(path string) []ArtifactRow {
 	ids := e.ticketIDs(path)
 	var rows []ArtifactRow
+	fixed := map[string]bool{"specs": true, "plans": true, "validation": true}
 	for _, kind := range []string{"specs", "plans", "validation"} {
 		matches, _ := e.glob(filepath.Join(path, "docs/superpowers", kind, "*.md"))
 		sort.Strings(matches)
@@ -540,5 +546,36 @@ func (e Engine) artifactRows(path string) []ArtifactRow {
 			rows = append(rows, ArtifactRow{TKID: artifactID(fn, ids), Kind: kind, Filename: fn})
 		}
 	}
+	// Feature-dir layout: docs/superpowers/<tkid>-<slug>/{design_spec,plan,validation}.md.
+	// The tkid comes from the dir name, the kind from the filename. Skip the fixed
+	// subdirs above — real filepath.Glob surfaces their files here too, and the kind
+	// loop already listed them.
+	feat, _ := e.glob(filepath.Join(path, "docs/superpowers", "*", "*.md"))
+	sort.Strings(feat)
+	for _, m := range feat {
+		dir := filepath.Base(filepath.Dir(m))
+		if fixed[dir] {
+			continue
+		}
+		kind := artifactKind(filepath.Base(m))
+		if kind == "" {
+			continue
+		}
+		rows = append(rows, ArtifactRow{TKID: artifactID(dir, ids), Kind: kind, Filename: filepath.Base(m)})
+	}
 	return rows
+}
+
+// artifactKind maps a feature-dir artifact filename to its dashboard kind, or ""
+// for files that are not a recognized design artifact.
+func artifactKind(filename string) string {
+	switch {
+	case strings.Contains(filename, "validation"):
+		return "validation"
+	case strings.Contains(filename, "plan"):
+		return "plans"
+	case strings.Contains(filename, "design"), strings.Contains(filename, "spec"):
+		return "specs"
+	}
+	return ""
 }

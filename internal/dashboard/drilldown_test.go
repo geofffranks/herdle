@@ -56,6 +56,27 @@ var _ = Describe("Engine.ticketTable / effective lifecycle", func() {
 		Expect(tbl[1].EffLifecycle).To(Equal("designed"))
 	})
 
+	It("derives planned/designed from the feature-dir layout too", func() {
+		tk.TicketsReturns([]vcs.Ticket{
+			{ID: "fp", Status: "open", Lifecycle: ""},
+			{ID: "fd", Status: "open", Lifecycle: ""},
+		}, nil)
+		// Feature-dir layout: docs/superpowers/<tkid>-<slug>/{design_spec,plan}.md.
+		// Only the feature-dir globs match here; the old {specs,plans}/*id* globs return nil.
+		eng.Glob = func(pattern string) ([]string, error) {
+			switch {
+			case contains(pattern, "*fp*") && contains(pattern, "plan.md"):
+				return []string{"/r/docs/superpowers/fp-x/plan.md"}, nil
+			case contains(pattern, "*fd*") && contains(pattern, "design_spec.md"):
+				return []string{"/r/docs/superpowers/fd-y/design_spec.md"}, nil
+			}
+			return nil, nil
+		}
+		tbl := eng.TicketTableForTest("/r")
+		Expect(tbl[0].EffLifecycle).To(Equal("planned"))
+		Expect(tbl[1].EffLifecycle).To(Equal("designed"))
+	})
+
 	It("falls back to '-' for explicit '-' and '?' for an absent field", func() {
 		tk.TicketsReturns([]vcs.Ticket{
 			{ID: "dash", Status: "open", Lifecycle: "-"},
@@ -488,6 +509,41 @@ var _ = Describe("Engine up-next + artifacts", func() {
 		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "dr-o833", Kind: "plans", Filename: "2026-06-13-dr-o833-y.md"}))
 		// A pre-convention filename that merely looks id-shaped must NOT be tagged.
 		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "", Kind: "specs", Filename: "2026-05-28-movable-ships-design.md"}))
+	})
+
+	It("lists feature-dir artifacts alongside legacy subdirs without double-listing", func() {
+		eng.Glob = func(pattern string) ([]string, error) {
+			switch {
+			case contains(pattern, ".tickets"):
+				return []string{"/r/.tickets/her-ju9h.md"}, nil
+			case contains(pattern, "docs/superpowers/specs"):
+				return []string{"/r/docs/superpowers/specs/2026-06-13-her-ju9h-x-design.md"}, nil
+			case contains(pattern, "docs/superpowers/*/*.md"):
+				// real filepath.Glob also surfaces the legacy specs/ file here;
+				// the feature scan must skip the fixed subdirs to avoid a dup.
+				return []string{
+					"/r/docs/superpowers/specs/2026-06-13-her-ju9h-x-design.md",
+					"/r/docs/superpowers/her-ju9h-x/design_spec.md",
+					"/r/docs/superpowers/her-ju9h-x/plan.md",
+					"/r/docs/superpowers/her-ju9h-x/validation.md",
+				}, nil
+			}
+			return nil, nil
+		}
+		rows := eng.ArtifactRowsForTest("/r")
+		// legacy specs file listed exactly once (by the kind loop, not the feature scan)
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "specs", Filename: "2026-06-13-her-ju9h-x-design.md"}))
+		count := 0
+		for _, r := range rows {
+			if r.Filename == "2026-06-13-her-ju9h-x-design.md" {
+				count++
+			}
+		}
+		Expect(count).To(Equal(1))
+		// feature-dir files: tkid from the dir name, kind derived from the filename
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "specs", Filename: "design_spec.md"}))
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "plans", Filename: "plan.md"}))
+		Expect(rows).To(ContainElement(dashboard.ArtifactRow{TKID: "her-ju9h", Kind: "validation", Filename: "validation.md"}))
 	})
 })
 

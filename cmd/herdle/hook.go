@@ -157,6 +157,7 @@ func runGatekeeper(r io.Reader, harness agent.Name, projectDir string) gate.Deci
 
 	switch t {
 	case gate.ToPendingValidation:
+		env.ValidationHint = validationHint(abs)
 		if pathReadable {
 			env.TicketContent, env.TicketReadOK = readTicket(abs)
 		}
@@ -178,6 +179,7 @@ func runGatekeeper(r io.Reader, harness agent.Name, projectDir string) gate.Deci
 			env.ReviewEvidence = gate.ClaudeReviewEvidence(transcript, ticketPath)
 		}
 	case gate.ToValidated:
+		env.ValidationHint = validationHint(abs)
 		if pathReadable {
 			env.TicketContent, env.TicketReadOK = readTicket(abs)
 			// Invariant: when ValidationReadOK is true, ValidationDocs holds the
@@ -232,6 +234,17 @@ func repoRootFromTicket(absTicket string) string {
 // returns their contents. The match is the tkid-glob herdle uses elsewhere:
 // <repoRoot>/docs/superpowers/validation/*<tkid>*. found reports whether any path
 // matched; allReadable is false when any matched path could not be read.
+func validationHint(absTicket string) string {
+	root := repoRootFromTicket(absTicket)
+	if root == "" {
+		return "unable to derive repository root from ticket path " + absTicket
+	}
+	tkid := strings.TrimSuffix(filepath.Base(absTicket), ".md")
+	legacy := filepath.Join(root, "docs", "superpowers", "validation", "*"+tkid+"*")
+	feature := filepath.Join(root, "docs", "superpowers", "*"+tkid+"*", "*validation*")
+	return legacy + " or " + feature
+}
+
 func readValidationDocs(absTicket string) (docs []string, found, allReadable bool) {
 	root := repoRootFromTicket(absTicket)
 	if root == "" {

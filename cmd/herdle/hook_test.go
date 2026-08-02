@@ -239,6 +239,17 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		Expect(d.Missing).To(Equal([]string{"deep-addressed"}))
 	})
 
+	It("names the checked validation glob when no review doc exists", func() {
+		root := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(root, ".tickets"), 0o750)).To(Succeed())
+		ticket := filepath.Join(root, ".tickets", "her-tolc.md")
+		Expect(os.WriteFile(ticket, []byte("---\nid: her-tolc\nlifecycle: in-development\n---\n"), 0o600)).To(Succeed())
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":"` + ticket + `","new_string":"lifecycle: pending-validation\n"}}`
+		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+		Expect(d.Allow).To(BeFalse())
+		Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "validation", "*her-tolc*")))
+	})
+
 	It("accepts required markers split across multiple correlated docs", func() {
 		root := writeProject("in-development", "")
 		dir := filepath.Join(root, "docs", "superpowers", "validation")
@@ -277,11 +288,14 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 			Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeTrue())
 		})
 
-		It("denies an unreadable-only correlated match", func() {
+		It("denies an unreadable-only correlated match and names the checked glob", func() {
 			root := writeProject("pending-validation", "")
 			unreadable := filepath.Join(root, "docs", "superpowers", "validation", "unreadable-her-x.md")
 			Expect(os.MkdirAll(unreadable, 0o750)).To(Succeed())
-			Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeFalse())
+			d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+			Expect(d.Allow).To(BeFalse())
+			Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "validation", "*her-x*")))
+			Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "*her-x*", "*validation*")))
 		})
 
 		It("denies mixed readable and unreadable correlated matches", func() {

@@ -459,6 +459,7 @@ type Env struct {
 	ValidationDocs   []string       // ToValidated: contents of matched validation docs
 	ValidationFound  bool           // ToValidated: at least one validation doc matched
 	ValidationReadOK bool           // ToValidated: every matched validation doc was readable
+	ValidationHint   string         // ToValidated: actionable path/glob context for diagnostics
 }
 
 // Decide is the gatekeeper verdict for one tool call, routed by transition. The
@@ -493,7 +494,11 @@ func decidePending(in HookInput, env Env) Decision {
 	}
 	ev := env.ReviewEvidence
 	if !ev.ReadOK {
-		return Decision{Allow: false, Missing: append([]string(nil), ev.Required...), Reason: ev.Unreadable}
+		reason := ev.Unreadable
+		if env.ValidationHint != "" {
+			reason += " Checked: " + env.ValidationHint
+		}
+		return Decision{Allow: false, Missing: append([]string(nil), ev.Required...), Reason: reason}
 	}
 	var missing []string
 	for _, key := range ev.Required {
@@ -528,7 +533,11 @@ func decideValidated(in HookInput, env Env) Decision {
 	// Open-items: a validation doc must exist, every match must be readable, and
 	// the readable contents must have zero unchecked boxes.
 	if !env.ValidationFound || !env.ValidationReadOK {
-		return Decision{Allow: false, Reason: missingDocReason}
+		reason := missingDocReason
+		if env.ValidationHint != "" {
+			reason += " Checked: " + env.ValidationHint
+		}
+		return Decision{Allow: false, Reason: reason}
 	}
 	open := 0
 	for _, d := range env.ValidationDocs {

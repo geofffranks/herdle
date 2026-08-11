@@ -317,7 +317,7 @@ var _ = Describe("docs drift guard", func() {
 			installInit := normalizeMarkdownWhitespace(markdownSection(install, "`herdle init`"))
 			usageDiagnostics := normalizeMarkdownWhitespace(markdownSection(usage, "Diagnostics"))
 			configurationScope := normalizeMarkdownWhitespace(configuration)
-			corpus := normalizeMarkdownWhitespace(strings.Join([]string{install, usage, conventions, readme}, "\n"))
+			corpus := strings.ToLower(normalizeMarkdownWhitespace(strings.Join([]string{install, usage, conventions, readme}, "\n")))
 
 			for _, text := range []string{installInit, installScope, conventions, readme} {
 				Expect(text).To(MatchRegexp(`--scope\s+project`))
@@ -337,7 +337,8 @@ var _ = Describe("docs drift guard", func() {
 
 			Expect(usageDiagnostics).To(MatchRegexp(`(?i)global.*every registered project`))
 			Expect(usageDiagnostics).To(MatchRegexp(`(?i)ancestor.*descendant`))
-			Expect(usageDiagnostics).To(MatchRegexp(`(?i)sibling|disjoint`))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)sibling`))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)disjoint`))
 			Expect(usageDiagnostics).To(MatchRegexp(`(?i)current (working )?directory`))
 			Expect(usageDiagnostics).To(MatchRegexp(`(?i)does not crawl`))
 			Expect(usageDiagnostics).To(MatchRegexp(`--scope\s+project\s+--uninstall`))

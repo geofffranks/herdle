@@ -50,6 +50,86 @@ var _ = Describe("hookCommand", func() {
 	})
 })
 
+var _ = Describe("ReviewEvidence contracts routing and correlation", func() {
+	const cleanReview = "## Herdle code review\n\n" +
+		"- [x] Final integration review completed\n" +
+		"- [x] Final integration review findings addressed\n" +
+		"- [x] Final integration rereview not required\n"
+
+	writeTicket := func() (root, ticket string) {
+		root = GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(root, ".tickets"), 0o750)).To(Succeed())
+		ticket = filepath.Join(root, ".tickets", "her-x.md")
+		Expect(os.WriteFile(ticket, []byte("---\nid: her-x\nlifecycle: in-development\n---\n"), 0o600)).To(Succeed())
+		return root, ticket
+	}
+	run := func(harness agent.Name, root, ticket, transcript string) gate.Decision {
+		if harness == agent.Claude {
+			payload := `{"tool_name":"Edit","tool_input":{"file_path":"` + ticket + `","new_string":"lifecycle: pending-validation\n"},"cwd":"` + root + `","transcript_path":"` + transcript + `"}`
+			return runGatekeeper(strings.NewReader(payload), harness, "")
+		}
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		return runGatekeeper(strings.NewReader(payload), harness, root)
+	}
+	writeLegacy := func(root, name, content string) {
+		dir := filepath.Join(root, "docs", "superpowers", "validation")
+		Expect(os.MkdirAll(dir, 0o750)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600)).To(Succeed())
+	}
+	writeFeature := func(root, dirName, content string) {
+		dir := filepath.Join(root, "docs", "superpowers", dirName)
+		Expect(os.MkdirAll(dir, 0o750)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "validation.md"), []byte(content), 0o600)).To(Succeed())
+	}
+
+	DescribeTable("accepts only exact correlated legacy and feature documents",
+		func(harness agent.Name, feature bool) {
+			root, ticket := writeTicket()
+			if feature {
+				writeFeature(root, "her-x-feature", cleanReview)
+			} else {
+				writeLegacy(root, "2026-06-22-her-x-validation.md", cleanReview)
+			}
+			Expect(run(harness, root, ticket, "").Allow).To(BeTrue())
+		},
+		Entry("Claude legacy", agent.Claude, false),
+		Entry("Claude feature", agent.Claude, true),
+		Entry("Polytoken legacy", agent.Polytoken, false),
+		Entry("Polytoken feature", agent.Polytoken, true),
+	)
+
+	DescribeTable("rejects evidence whose ticket id only has the requested id as a prefix or suffix",
+		func(harness agent.Name, collision string) {
+			root, ticket := writeTicket()
+			writeLegacy(root, "2026-"+collision+"-validation.md", cleanReview)
+			writeFeature(root, collision+"-feature", cleanReview)
+			Expect(run(harness, root, ticket, "").Allow).To(BeFalse())
+		},
+		Entry("Claude prefix collision", agent.Claude, "her-x2"),
+		Entry("Claude suffix collision", agent.Claude, "otherher-x"),
+		Entry("Polytoken prefix collision", agent.Polytoken, "her-x2"),
+		Entry("Polytoken suffix collision", agent.Polytoken, "otherher-x"),
+	)
+
+	DescribeTable("fails closed for unrelated-ticket documents",
+		func(harness agent.Name) {
+			root, ticket := writeTicket()
+			writeLegacy(root, "2026-06-22-her-other-validation.md", cleanReview)
+			Expect(run(harness, root, ticket, "").Allow).To(BeFalse())
+		},
+		Entry("Claude", agent.Claude),
+		Entry("Polytoken", agent.Polytoken),
+	)
+
+	It("does not let Claude transcript review calls satisfy forward gating", func() {
+		root, ticket := writeTicket()
+		transcript := filepath.Join(root, "transcript.jsonl")
+		line := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"code-review","args":"medium"}}]}}`
+		Expect(os.WriteFile(transcript, []byte(line+"\n"), 0o600)).To(Succeed())
+		Expect(run(agent.Claude, root, ticket, transcript).Allow).To(BeFalse())
+	})
+})
+
 var _ = Describe("runGatekeeper Claude compatibility", func() {
 	runGatekeeper := func(r io.Reader) gate.Decision {
 		return runGatekeeper(r, agent.Claude, "")
@@ -68,22 +148,22 @@ var _ = Describe("runGatekeeper Claude compatibility", func() {
 	}
 
 	Describe("pending-validation", func() {
-		It("allows when both passes are present", func() {
+		It("does not accept both transcript review passes without durable evidence", func() {
 			tp := writeTranscript(skill("medium"), skill("high"))
 			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
-			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeTrue())
+			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeFalse())
 		})
-		It("allows a single pass", func() {
+		It("does not accept a single transcript review pass without durable evidence", func() {
 			tp := writeTranscript(skill("medium"))
 			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
-			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeTrue())
+			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeFalse())
 		})
-		It("blocks when no pass is present", func() {
+		It("blocks when no durable evidence is present", func() {
 			tp := writeTranscript("{}")
 			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
 			Expect(runGatekeeper(stdin(ti, tp)).Allow).To(BeFalse())
 		})
-		It("fails closed when the transcript path is missing", func() {
+		It("fails closed when durable evidence is missing", func() {
 			ti := `{"file_path":"/repo/.tickets/her-5s12.md","new_string":"lifecycle: pending-validation\n"}`
 			Expect(runGatekeeper(stdin(ti, "/no/such/transcript.jsonl")).Allow).To(BeFalse())
 		})
@@ -236,7 +316,7 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
 		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
 		Expect(d.Allow).To(BeFalse())
-		Expect(d.Missing).To(Equal([]string{"deep-addressed"}))
+		Expect(d.Missing).To(Equal([]string{"complete-review-contract"}))
 	})
 
 	It("names the checked validation glob when no review doc exists", func() {
@@ -250,14 +330,14 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "validation", "*her-tolc*")))
 	})
 
-	It("accepts required markers split across multiple correlated docs", func() {
+	It("rejects required markers split across multiple correlated docs", func() {
 		root := writeProject("in-development", "")
 		dir := filepath.Join(root, "docs", "superpowers", "validation")
 		Expect(os.MkdirAll(dir, 0o750)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(dir, "a-her-x.md"), []byte("- [x] Standard review completed\n- [x] Standard review findings addressed\n"), 0o600)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(dir, "b-her-x.md"), []byte("- [x] Deep review completed\n- [x] Deep review findings addressed\n"), 0o600)).To(Succeed())
 		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
-		Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeTrue())
+		Expect(runGatekeeper(strings.NewReader(payload), agent.Polytoken, root).Allow).To(BeFalse())
 	})
 
 	It("rejects a marker duplicated across correlated docs", func() {
@@ -267,7 +347,7 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
 		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
 		Expect(d.Allow).To(BeFalse())
-		Expect(d.Missing).To(ContainElement("standard-completed"))
+		Expect(d.Missing).To(ContainElement("complete-review-contract"))
 	})
 
 	It("fails closed when any correlated doc is unreadable even if another is complete", func() {
@@ -277,7 +357,7 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
 		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
 		Expect(d.Allow).To(BeFalse())
-		Expect(d.Reason).To(ContainSubstring("cannot read the ticket-correlated validation doc"))
+		Expect(d.Reason).To(ContainSubstring("cannot read a ticket-correlated validation document"))
 	})
 
 	Describe("validated transition validation-doc readability", func() {
@@ -295,7 +375,7 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 			d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
 			Expect(d.Allow).To(BeFalse())
 			Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "validation", "*her-x*")))
-			Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "*her-x*", "*validation*")))
+			Expect(d.Reason).To(ContainSubstring(filepath.Join(root, "docs", "superpowers", "her-x-*", "*validation*")))
 		})
 
 		It("denies mixed readable and unreadable correlated matches", func() {
@@ -327,7 +407,7 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-empty-root.md","new_string":"lifecycle: pending-validation\n"}}`
 		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, "")
 		Expect(d.Allow).To(BeFalse())
-		Expect(d.Missing).To(Equal([]string{"standard-completed", "standard-addressed", "deep-completed", "deep-addressed"}))
+		Expect(d.Missing).To(Equal([]string{"complete-review-contract"}))
 	})
 
 	It("keeps rollback and override semantics", func() {

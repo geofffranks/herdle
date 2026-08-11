@@ -253,5 +253,57 @@ var _ = Describe("docs drift guard", func() {
 			invalid := invalidCommandRefTokens(rows, s)
 			Expect(invalid).To(BeEmpty(), "command reference names unknown surface: %v", invalid)
 		})
+
+		It("documents project-scoped Polytoken installation", func() {
+			read := func(path string) string {
+				data, err := os.ReadFile(filepath.Join(root, path)) // #nosec G304 -- reads named repo doc files under the test repo root
+				Expect(err).NotTo(HaveOccurred())
+				return string(data)
+			}
+
+			install := read("docs/install.md")
+			configuration := read("docs/configuration.md")
+			usage := read("docs/usage.md")
+			conventions := read("docs/tk-conventions.md")
+			readme := read("README.md")
+
+			for _, text := range []string{install, usage, conventions, readme} {
+				Expect(text).To(ContainSubstring("--scope project"))
+			}
+			for _, text := range []string{install, usage} {
+				Expect(text).To(ContainSubstring("--scope global"))
+				Expect(text).To(ContainSubstring("explicit exclusive `--agent polytoken`"))
+				Expect(text).To(ContainSubstring("`.polytoken/skills/herdle-tk-flow/SKILL.md`"))
+				Expect(text).To(ContainSubstring("`AGENTS.md`"))
+			}
+
+			Expect(install).To(ContainSubstring("`--scope` defaults to `global`"))
+			Expect(install).To(ContainSubstring("canonical physical current working directory"))
+			Expect(install).To(ContainSubstring("does not seed"))
+			Expect(install).To(ContainSubstring("does not create or rewrite"))
+			Expect(install).To(ContainSubstring("start a new Polytoken session"))
+
+			Expect(configuration).To(ContainSubstring("polytoken = true"))
+			Expect(configuration).To(ContainSubstring("project-scoped Herdle Polytoken installation"))
+
+			Expect(usage).To(ContainSubstring("checks the global"))
+			Expect(usage).To(ContainSubstring("every registered project installation"))
+			Expect(usage).To(ContainSubstring("ancestor and descendant"))
+			Expect(usage).To(ContainSubstring("Sibling and otherwise"))
+			Expect(usage).To(ContainSubstring("disjoint project paths are allowed"))
+			Expect(usage).To(ContainSubstring("current directory"))
+			Expect(usage).To(ContainSubstring("does not crawl"))
+			Expect(usage).To(ContainSubstring("--scope project --uninstall"))
+
+			corpus := strings.Join([]string{install, usage, conventions, readme}, "\n")
+			for _, stale := range []string{
+				"Selection is global only",
+				"does not offer or create a project-local installation",
+				"There is no project-local Polytoken mode",
+				"installs globally only",
+			} {
+				Expect(corpus).NotTo(ContainSubstring(stale))
+			}
+		})
 	})
 })

@@ -208,6 +208,12 @@ var _ = Describe("herdle init", func() {
 		Expect(configFile()).To(BeAnExistingFile())
 	})
 
+	It("documents installation scope in help", func() {
+		Expect(app.Run([]string{"herdle", "init", "--help"})).To(Succeed())
+		Expect(buf.String()).To(ContainSubstring("--scope value"))
+		Expect(buf.String()).To(ContainSubstring("installation scope: global or project (default: \"global\")"))
+	})
+
 	DescribeTable("rejects unsupported project scope before path resolution or writes",
 		func(args []string, expected string) {
 			called := false

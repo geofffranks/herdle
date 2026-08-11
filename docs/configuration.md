@@ -35,6 +35,10 @@ path = "/path/to/gitlab/repo"    # gitlab.com or self-hosted GitLab — forge de
 
 [[project]]
 path = "/path/to/plain"          # no forge remote -> git+tk view only
+
+[[project]]
+path      = "/path/to/polytoken-project"
+polytoken = true                  # project-scoped Herdle Polytoken installation
 ```
 
 ---
@@ -52,11 +56,12 @@ path = "/path/to/plain"          # no forge remote -> git+tk view only
 
 | Key | Required | Description |
 |---|---|---|
-| `path` | yes | Absolute path to the repository. |
+| `path` | yes | Absolute path to the project directory or repository. |
 | `slug` | no | Forge-agnostic `[group/]owner/repo` slug. Enables PR/MR features. The forge (GitHub via `gh`, GitLab via `glab`) is selected from the remote host, so this works for github.com, GitHub Enterprise, gitlab.com, and self-hosted GitLab alike. |
 | `remote` | no | Git remote to treat as canonical. Autodetected if unset. |
 | `base` | no | Trunk branch. Autodetected if unset. |
 | `integration` | no | A personal integration branch (e.g. your long-running merge target). |
+| `polytoken` | no | `true` declares that a project-scoped Herdle Polytoken installation should exist at the exact canonical project path. Project-scope init and uninstall manage this field. |
 
 ---
 

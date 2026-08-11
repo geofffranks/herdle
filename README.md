@@ -8,7 +8,7 @@ herdle is a self-contained Go binary that gives you a cross-project, tk-driven w
 
 **Cross-project dashboard** — run `herdle --all` for a one-line summary per configured repo, or `herdle` inside any repo for a full drilldown: open PRs correlated to tickets, merged PRs needing branch cleanup, work-in-progress branches with sync state, and an up-next queue sorted by priority. Design artifacts (specs/plans/validation docs) are listed alongside their tickets.
 
-**Agent setup** — bare `herdle init` remains the Claude-compatible default. `herdle init --agent polytoken` installs global Polytoken skills, context, and lifecycle gating under `${XDG_CONFIG_HOME:-$HOME/.config}/polytoken`; repeat `--agent` to configure both harnesses in the requested order. Herdle seeds its own `config.toml` once after all selected installs succeed.
+**Agent setup** — bare `herdle init` remains the Claude-compatible default. `herdle init --agent polytoken` installs Polytoken skills, context, and lifecycle gating globally by default. Run `herdle init --agent polytoken --scope project` from a project directory for a project-only installation; repeat `--agent` to configure both harnesses globally in the requested order.
 
 ## Requirements at a glance
 
@@ -27,16 +27,17 @@ See [docs/install.md](docs/install.md) for the full dependency contract and inst
 Download the binary for your platform from the [latest GitHub Release](https://github.com/geofffranks/herdle/releases/latest) — assets are named `herdle-<os>-<arch>` (e.g. `herdle-darwin-arm64`, `herdle-linux-amd64`). Put it on your `PATH`, then:
 
 ```bash
-herdle init                            # Claude-compatible default
-herdle init --agent polytoken          # global Polytoken setup
-herdle init --agent claude --agent polytoken  # configure both, in this order
-herdle doctor --agent polytoken        # verify the selected harness
-herdle --all                           # cross-project summary
+herdle init                                      # Claude-compatible default
+herdle init --agent polytoken --scope global     # global Polytoken setup
+herdle init --agent polytoken --scope project    # project Polytoken setup in this directory
+herdle init --agent claude --agent polytoken     # configure both globally, in this order
+herdle doctor --agent polytoken                  # verify all known Polytoken installations
+herdle --all                                     # cross-project summary
 ```
 
 After installation or upgrade, use `/reload` in Claude Code and start a new
-Polytoken session (or restart the current client) so newly installed global
-skills, context, and hooks are loaded.
+Polytoken session (or restart the current client) so changed skills, context,
+and hooks are loaded.
 
 ## Sample
 

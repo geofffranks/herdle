@@ -2,6 +2,7 @@ package assets_test
 
 import (
 	"io/fs"
+	"strings"
 	"testing/fstest"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +31,94 @@ var _ = Describe("embedded skill artifacts", func() {
 			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
+	})
+})
+
+var _ = Describe("embedded final-integration review contract", func() {
+	const cleanReviewContract = "## Herdle code review\n\n" +
+		"- [x] Final integration review completed\n" +
+		"- [x] Final integration review findings addressed\n" +
+		"- [x] Final integration rereview not required\n"
+	const completedRereviewContract = "## Herdle code review\n\n" +
+		"- [x] Final integration review completed\n" +
+		"- [x] Final integration review findings addressed\n" +
+		"- [x] Final integration rereview completed\n" +
+		"- [x] Final integration rereview findings addressed\n"
+
+	readSkill := func(skillFS fs.FS, name string) string {
+		content, err := fs.ReadFile(skillFS, "skills/"+name+"/SKILL.md")
+		Expect(err).NotTo(HaveOccurred())
+		return string(content)
+	}
+
+	semanticText := func(skill string) string {
+		return strings.Join(strings.Fields(strings.ReplaceAll(skill, "**", "")), " ")
+	}
+
+	artifactSkills := func() []string {
+		return []string{
+			readSkill(assets.ClaudeFS, "herdle-tk-artifacts"),
+			readSkill(assets.PolytokenFS, "herdle-tk-artifacts"),
+		}
+	}
+
+	allReviewSkills := func() []string {
+		return []string{
+			readSkill(assets.ClaudeFS, "herdle-tk-artifacts"),
+			readSkill(assets.PolytokenFS, "herdle-tk-artifacts"),
+			readSkill(assets.ClaudeFS, "herdle-tk-flow"),
+			readSkill(assets.PolytokenFS, "herdle-tk-flow"),
+		}
+	}
+
+	It("keeps Claude and Polytoken artifact skills semantically aligned", func() {
+		for _, skill := range artifactSkills() {
+			semantics := semanticText(skill)
+			Expect(semantics).To(ContainSubstring("one fresh final integration review"))
+			Expect(semantics).To(ContainSubstring("one complete fixer batch"))
+			Expect(semantics).To(ContainSubstring("only after branch-changing fixes"))
+		}
+	})
+
+	It("emits both exact mutually exclusive new marker variants", func() {
+		for _, skill := range artifactSkills() {
+			Expect(skill).To(ContainSubstring(cleanReviewContract))
+			Expect(skill).To(ContainSubstring(completedRereviewContract))
+			Expect(skill).To(ContainSubstring("exactly one of these mutually exclusive forms"))
+		}
+	})
+
+	It("removes Claude medium/high transcript proof", func() {
+		for _, skillName := range []string{"herdle-tk-artifacts", "herdle-tk-flow"} {
+			skill := readSkill(assets.ClaudeFS, skillName)
+			Expect(skill).NotTo(ContainSubstring("/code-review"))
+			Expect(skill).NotTo(ContainSubstring("medium"))
+			Expect(skill).NotTo(ContainSubstring("high"))
+			Expect(skill).NotTo(ContainSubstring("transcript"))
+		}
+	})
+
+	It("keeps flow and artifact lifecycle gates aligned", func() {
+		for _, skill := range allReviewSkills() {
+			semantics := semanticText(skill)
+			Expect(semantics).To(ContainSubstring("one fresh final integration review"))
+			Expect(semantics).To(ContainSubstring("Critical and Important findings"))
+			Expect(semantics).To(ContainSubstring("only after branch-changing fixes"))
+		}
+	})
+
+	It("does not teach new documents to emit legacy markers", func() {
+		legacyMarkers := []string{
+			"Standard review completed",
+			"Standard review findings addressed",
+			"Deep review completed",
+			"Deep review findings addressed",
+		}
+		for _, skill := range allReviewSkills() {
+			for _, marker := range legacyMarkers {
+				Expect(skill).NotTo(ContainSubstring(marker))
+			}
+		}
 	})
 })
 

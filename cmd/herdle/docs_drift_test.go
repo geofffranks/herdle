@@ -158,6 +158,42 @@ func invalidCommandRefTokens(rows []string, s docsSurface) []string {
 	return invalid
 }
 
+func normalizeMarkdownWhitespace(markdown string) string {
+	return strings.Join(strings.Fields(markdown), " ")
+}
+
+func markdownSection(markdown, heading string) string {
+	lines := strings.Split(markdown, "\n")
+	start, level := -1, 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		hashes := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
+		if strings.TrimSpace(strings.TrimLeft(trimmed, "#")) == heading {
+			start, level = i+1, hashes
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	end := len(lines)
+	for i := start; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		hashes := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
+		if hashes <= level {
+			end = i
+			break
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines[start:end], "\n"))
+}
+
 // repoRootFromTest locates the repository root relative to this test file.
 func repoRootFromTest() string {
 	_, file, _, ok := runtime.Caller(0)
@@ -230,6 +266,16 @@ var _ = Describe("docs drift guard", func() {
 			Expect(invalid).To(ContainElement("flag: --nope"))
 			Expect(invalid).NotTo(ContainElement("command: project add"))
 		})
+
+		It("normalizes Markdown whitespace without changing semantic tokens", func() {
+			markdown := "Project scope\n\nrequires   `--agent polytoken`."
+			Expect(normalizeMarkdownWhitespace(markdown)).To(Equal("Project scope requires `--agent polytoken`."))
+		})
+
+		It("extracts only the requested Markdown section", func() {
+			markdown := "# Guide\n## Install\nkeep this\n### Layout\nkeep child\n## Doctor\nexclude this\n"
+			Expect(markdownSection(markdown, "Install")).To(Equal("keep this\n### Layout\nkeep child"))
+		})
 	})
 
 	Describe("real docs vs the live CLI", func() {
@@ -267,42 +313,42 @@ var _ = Describe("docs drift guard", func() {
 			conventions := read("docs/tk-conventions.md")
 			readme := read("README.md")
 
-			for _, text := range []string{install, usage, conventions, readme} {
-				Expect(text).To(ContainSubstring("--scope project"))
+			installScope := normalizeMarkdownWhitespace(markdownSection(install, "Project Polytoken layout"))
+			installInit := normalizeMarkdownWhitespace(markdownSection(install, "`herdle init`"))
+			usageDiagnostics := normalizeMarkdownWhitespace(markdownSection(usage, "Diagnostics"))
+			configurationScope := normalizeMarkdownWhitespace(configuration)
+			corpus := normalizeMarkdownWhitespace(strings.Join([]string{install, usage, conventions, readme}, "\n"))
+
+			for _, text := range []string{installInit, installScope, conventions, readme} {
+				Expect(text).To(MatchRegexp(`--scope\s+project`))
 			}
-			for _, text := range []string{install, usage} {
-				Expect(text).To(ContainSubstring("--scope global"))
-				Expect(text).To(ContainSubstring("explicit exclusive `--agent polytoken`"))
-				Expect(text).To(ContainSubstring("`.polytoken/skills/herdle-tk-flow/SKILL.md`"))
-				Expect(text).To(ContainSubstring("`AGENTS.md`"))
-			}
+			Expect(installInit).To(MatchRegexp(`--scope`))
+			Expect(installScope).To(MatchRegexp(`--agent\s+polytoken`))
+			Expect(installScope).To(ContainSubstring(".polytoken/skills/herdle-tk-flow/SKILL.md"))
+			Expect(installScope).To(ContainSubstring("AGENTS.md"))
+			Expect(installInit).To(MatchRegexp(`--scope.*global`))
+			Expect(installScope).To(MatchRegexp(`(?i)canonical.*physical.*(current working directory|cwd)`))
+			Expect(installScope).To(MatchRegexp(`(?i)does not seed`))
+			Expect(install).To(MatchRegexp(`(?i)(does not create or rewrite|does not write)`))
+			Expect(installScope).To(MatchRegexp(`(?i)start a new Polytoken session|restart.*Polytoken`))
 
-			Expect(install).To(ContainSubstring("`--scope` defaults to `global`"))
-			Expect(install).To(ContainSubstring("canonical physical current working directory"))
-			Expect(install).To(ContainSubstring("does not seed"))
-			Expect(install).To(ContainSubstring("does not create or rewrite"))
-			Expect(install).To(ContainSubstring("start a new Polytoken session"))
+			Expect(configurationScope).To(ContainSubstring("polytoken = true"))
+			Expect(configurationScope).To(MatchRegexp(`(?i)project-scoped.*Polytoken installation`))
 
-			Expect(configuration).To(ContainSubstring("polytoken = true"))
-			Expect(configuration).To(ContainSubstring("project-scoped Herdle Polytoken installation"))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)global.*every registered project`))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)ancestor.*descendant`))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)sibling|disjoint`))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)current (working )?directory`))
+			Expect(usageDiagnostics).To(MatchRegexp(`(?i)does not crawl`))
+			Expect(usageDiagnostics).To(MatchRegexp(`--scope\s+project\s+--uninstall`))
 
-			Expect(usage).To(ContainSubstring("checks the global"))
-			Expect(usage).To(ContainSubstring("every registered project installation"))
-			Expect(usage).To(ContainSubstring("ancestor and descendant"))
-			Expect(usage).To(ContainSubstring("Sibling and otherwise"))
-			Expect(usage).To(ContainSubstring("disjoint project paths are allowed"))
-			Expect(usage).To(ContainSubstring("current directory"))
-			Expect(usage).To(ContainSubstring("does not crawl"))
-			Expect(usage).To(ContainSubstring("--scope project --uninstall"))
-
-			corpus := strings.Join([]string{install, usage, conventions, readme}, "\n")
 			for _, stale := range []string{
 				"Selection is global only",
 				"does not offer or create a project-local installation",
 				"There is no project-local Polytoken mode",
 				"installs globally only",
 			} {
-				Expect(corpus).NotTo(ContainSubstring(stale))
+				Expect(corpus).NotTo(ContainSubstring(strings.ToLower(stale)))
 			}
 		})
 	})

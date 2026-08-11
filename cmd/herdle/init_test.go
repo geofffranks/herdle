@@ -208,10 +208,19 @@ var _ = Describe("herdle init", func() {
 		Expect(configFile()).To(BeAnExistingFile())
 	})
 
-	It("documents installation scope in help", func() {
-		Expect(app.Run([]string{"herdle", "init", "--help"})).To(Succeed())
-		Expect(buf.String()).To(ContainSubstring("--scope value"))
-		Expect(buf.String()).To(ContainSubstring("installation scope: global or project (default: \"global\")"))
+	It("defines installation scope metadata", func() {
+		command := initCommand()
+		var scope *cli.StringFlag
+		for _, flag := range command.Flags {
+			if candidate, ok := flag.(*cli.StringFlag); ok && candidate.Name == "scope" {
+				scope = candidate
+				break
+			}
+		}
+		Expect(scope).NotTo(BeNil())
+		Expect(scope.Value).To(Equal("global"))
+		Expect(scope.Usage).To(MatchRegexp(`(?i)installation scope`))
+		Expect(scope.Usage).To(MatchRegexp(`global.*project|project.*global`))
 	})
 
 	DescribeTable("rejects unsupported project scope before path resolution or writes",

@@ -234,14 +234,15 @@ var _ = Describe("herdle init", func() {
 	)
 
 	It("accepts repeated explicit Polytoken selection for project scope", func() {
+		project := GinkgoT().TempDir()
 		deps := defaultInitDependencies()
-		deps.getwd = func() (string, error) { return GinkgoT().TempDir(), nil }
+		deps.getwd = func() (string, error) { return project, nil }
 		a := appWithInitDeps(deps)
-		err := a.Run([]string{"herdle", "init", "--agent", "polytoken", "--agent", "polytoken", "--scope", "project"})
-		Expect(err).To(MatchError("project-scoped Polytoken artifacts are not implemented"))
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
+		Expect(strings.Count(buf.String(), "polytoken: written "+filepath.Join(project, ".polytoken", "skills", "herdle-tk-flow", "SKILL.md"))).To(Equal(1))
 	})
 
-	It("canonicalizes the exact project cwd without seeding config", func() {
+	It("installs project Polytoken into the canonical exact cwd and registers it", func() {
 		physical := GinkgoT().TempDir()
 		project := filepath.Join(physical, "project")
 		Expect(os.Mkdir(project, 0o750)).To(Succeed())
@@ -256,10 +257,18 @@ var _ = Describe("herdle init", func() {
 			return canonicalized, err
 		}
 		a := appWithInitDeps(deps)
-		err := a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})
-		Expect(err).To(MatchError("project-scoped Polytoken artifacts are not implemented"))
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
 		Expect(canonicalized).To(Equal(project))
-		Expect(configFile()).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "skills", "herdle-tk-flow", "SKILL.md")).To(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "skills", "herdle-tk-artifacts", "SKILL.md")).To(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "herdle.md")).To(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "hooks.json")).To(BeAnExistingFile())
+		agents, err := os.ReadFile(filepath.Join(project, "AGENTS.md"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(agents)).To(Equal("<!-- herdle:begin -->\n@.polytoken/herdle.md\n<!-- herdle:end -->\n"))
+		cfg, err := config.Load()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Projects).To(Equal([]config.Project{{Path: project, Polytoken: true}}))
 		Expect(polytokenSkill()).NotTo(BeAnExistingFile())
 	})
 
@@ -271,6 +280,145 @@ var _ = Describe("herdle init", func() {
 		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(MatchError("canonical sentinel"))
 		Expect(configFile()).NotTo(BeAnExistingFile())
 		Expect(polytokenSkill()).NotTo(BeAnExistingFile())
+	})
+
+	It("repeats project install idempotently and forces owned refresh", func() {
+		project := GinkgoT().TempDir()
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return project, nil }
+		a := appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
+		docPath := filepath.Join(project, ".polytoken", "herdle.md")
+		agentsPath := filepath.Join(project, "AGENTS.md")
+		Expect(os.WriteFile(docPath, []byte("stale"), 0o600)).To(Succeed())
+		Expect(os.Chmod(docPath, 0o600)).To(Succeed())
+		foreign := "# Mine\n\n<!-- herdle:begin -->\n@.polytoken/herdle.md\n<!-- herdle:end -->\n"
+		Expect(os.WriteFile(agentsPath, []byte(foreign), 0o640)).To(Succeed())
+		Expect(os.Chmod(agentsPath, 0o640)).To(Succeed())
+
+		a = appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
+		contents, err := os.ReadFile(docPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(contents)).To(Equal("stale"))
+		Expect(strings.Count(buf.String(), "polytoken: skipped "+agentsPath)).To(Equal(1))
+
+		a = appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project", "--force"})).To(Succeed())
+		contents, err = os.ReadFile(docPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(contents)).NotTo(Equal("stale"))
+		docInfo, err := os.Stat(docPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(docInfo.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+		agents, err := os.ReadFile(agentsPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(agents)).To(Equal(foreign))
+		agentsInfo, err := os.Stat(agentsPath)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(agentsInfo.Mode().Perm()).To(Equal(os.FileMode(0o640)))
+		cfg, err := config.Load()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Projects).To(Equal([]config.Project{{Path: project, Polytoken: true}}))
+	})
+
+	It("does not register after project artifact failure", func() {
+		project := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(project, ".polytoken"), []byte("not a directory"), 0o600)).To(Succeed())
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return project, nil }
+		a := appWithInitDeps(deps)
+		err := a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})
+		Expect(err).To(MatchError(ContainSubstring(filepath.Join(project, ".polytoken"))))
+		Expect(err).NotTo(MatchError("project-scoped Polytoken artifacts are not implemented"))
+		Expect(configFile()).NotTo(BeAnExistingFile())
+	})
+
+	It("reports project config save failure after artifacts and repairs on rerun", func() {
+		project := GinkgoT().TempDir()
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return project, nil }
+		deps.saveConfig = func(*config.Config) error { return errors.New("save sentinel") }
+		a := appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(MatchError("save sentinel"))
+		Expect(filepath.Join(project, ".polytoken", "herdle.md")).To(BeAnExistingFile())
+		Expect(filepath.Join(project, "AGENTS.md")).To(BeAnExistingFile())
+		Expect(configFile()).NotTo(BeAnExistingFile())
+
+		deps = defaultInitDependencies()
+		deps.getwd = func() (string, error) { return project, nil }
+		a = appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
+		cfg, err := config.Load()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Projects).To(Equal([]config.Project{{Path: project, Polytoken: true}}))
+	})
+
+	DescribeTable("uninstalls registered project Polytoken state",
+		func(existing config.Project, preservesEntry bool) {
+			project := GinkgoT().TempDir()
+			existing.Path = project
+			cfg := &config.Config{Projects: []config.Project{existing}}
+			Expect(cfg.Save()).To(Succeed())
+			deps := defaultInitDependencies()
+			deps.getwd = func() (string, error) { return project, nil }
+			a := appWithInitDeps(deps)
+			Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
+			agentsPath := filepath.Join(project, "AGENTS.md")
+			managed := "<!-- herdle:begin -->\n@.polytoken/herdle.md\n<!-- herdle:end -->\n"
+			Expect(os.WriteFile(agentsPath, []byte("# Mine\n\n"+managed), 0o640)).To(Succeed())
+
+			a = appWithInitDeps(deps)
+			Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project", "--uninstall"})).To(Succeed())
+			Expect(filepath.Join(project, ".polytoken", "herdle.md")).NotTo(BeAnExistingFile())
+			contents, err := os.ReadFile(agentsPath)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(contents)).To(Equal("# Mine\n\n"))
+			loaded, err := config.Load()
+			Expect(err).NotTo(HaveOccurred())
+			if preservesEntry {
+				Expect(loaded.Projects).To(Equal([]config.Project{{Path: project, Slug: existing.Slug}}))
+			} else {
+				Expect(loaded.Projects).To(BeEmpty())
+			}
+		},
+		Entry("removes an empty path-only entry", config.Project{}, false),
+		Entry("preserves a metadata-bearing entry", config.Project{Slug: "owner/app"}, true),
+	)
+
+	DescribeTable("unregistered project uninstall with missing config does not create config",
+		func(withArtifacts bool) {
+			project := GinkgoT().TempDir()
+			if withArtifacts {
+				Expect(os.Mkdir(filepath.Join(project, ".polytoken"), 0o750)).To(Succeed())
+				Expect(os.WriteFile(filepath.Join(project, ".polytoken", "herdle.md"), []byte("recognizable"), 0o600)).To(Succeed())
+			}
+			deps := defaultInitDependencies()
+			deps.getwd = func() (string, error) { return project, nil }
+			a := appWithInitDeps(deps)
+			Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project", "--uninstall"})).To(Succeed())
+			Expect(filepath.Join(project, ".polytoken", "herdle.md")).NotTo(BeAnExistingFile())
+			Expect(configFile()).NotTo(BeAnExistingFile())
+		},
+		Entry("without artifacts", false),
+		Entry("with recognizable artifacts", true),
+	)
+
+	It("unregistered project uninstall without a matching entry does not rewrite config", func() {
+		project := GinkgoT().TempDir()
+		original := []byte("[[project]]\npath = '/other/app'\npolytoken = true\n")
+		Expect(os.MkdirAll(filepath.Dir(configFile()), 0o750)).To(Succeed())
+		Expect(os.WriteFile(configFile(), original, 0o600)).To(Succeed())
+		saves := 0
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return project, nil }
+		deps.saveConfig = func(*config.Config) error { saves++; return nil }
+		a := appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project", "--uninstall"})).To(Succeed())
+		contents, err := os.ReadFile(configFile())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(contents).To(Equal(original))
+		Expect(saves).To(BeZero())
 	})
 
 	Describe("project config persistence", func() {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/urfave/cli/v2"
 
@@ -68,13 +69,41 @@ func initAction(c *cli.Context, deps initDependencies) error {
 		if err != nil {
 			return err
 		}
-		if _, err := deps.canonicalProjectPath(cwd); err != nil {
+		project, err := deps.canonicalProjectPath(cwd)
+		if err != nil {
 			return err
 		}
-		return errors.New("project-scoped Polytoken artifacts are not implemented")
+		return initProjectAction(c, project, deps)
 	}
 
 	return initGlobalAction(c, selected)
+}
+
+func initProjectAction(c *cli.Context, project string, deps initDependencies) error {
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		return err
+	}
+	standalone := filepath.Join(project, ".polytoken")
+	layout := initcmd.PolytokenLayout{
+		StandaloneDir:  standalone,
+		HooksPath:      filepath.Join(standalone, "hooks.json"),
+		ContextPath:    filepath.Join(project, "AGENTS.md"),
+		ContextInclude: "@.polytoken/herdle.md",
+	}
+	var results []initcmd.Result
+	if c.Bool("uninstall") {
+		results, err = initcmd.UninstallPolytokenLayout(assets.PolytokenFS, layout)
+	} else {
+		results, err = initcmd.InstallPolytokenLayout(assets.PolytokenFS, layout, initcmd.PolytokenGatekeeperCommand(), c.Bool("force"))
+	}
+	for _, result := range results {
+		fmt.Fprintf(c.App.Writer, "%s: %s %s\n", agent.Polytoken, result.Action, result.Path)
+	}
+	if err != nil {
+		return err
+	}
+	return saveProjectConfig(cfg, project, c.Bool("uninstall"), deps)
 }
 
 func updateProjectConfig(path string, uninstall bool, deps initDependencies) error {
@@ -82,6 +111,10 @@ func updateProjectConfig(path string, uninstall bool, deps initDependencies) err
 	if err != nil {
 		return err
 	}
+	return saveProjectConfig(cfg, path, uninstall, deps)
+}
+
+func saveProjectConfig(cfg *config.Config, path string, uninstall bool, deps initDependencies) error {
 	var changed bool
 	if uninstall {
 		changed = cfg.ClearProjectPolytoken(path)

@@ -223,6 +223,14 @@ var _ = Describe("herdle init", func() {
 		Expect(scope.Usage).To(MatchRegexp(`global.*project|project.*global`))
 	})
 
+	It("renders --scope in the init help text", func() {
+		_ = app.Run([]string{"herdle", "init", "--help"})
+		out := buf.String()
+		Expect(out).To(ContainSubstring("--scope"))
+		Expect(out).To(ContainSubstring("global"))
+		Expect(out).To(ContainSubstring("project"))
+	})
+
 	DescribeTable("rejects unsupported project scope before path resolution or writes",
 		func(args []string, expected string) {
 			called := false

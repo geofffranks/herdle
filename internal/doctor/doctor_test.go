@@ -237,6 +237,40 @@ var _ = Describe("doctor Polytoken diagnostics", func() {
 		)
 	})
 
+	Describe("handles absent global Polytoken installation", func() {
+		BeforeEach(func() {
+			Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
+			Expect(os.MkdirAll(env.PolytokenDir, 0o750)).To(Succeed())
+		})
+
+		It("fails when no global or project installation exists", func() {
+			rs := doctor.Run(env)
+			r := find(rs, "polytoken: skills + context")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring("not present"))
+		})
+
+		It("passes global rows when a valid project installation exists", func() {
+			project := GinkgoT().TempDir()
+			installProjectPolytoken(env, project)
+			saveDoctorConfig(env, config.Project{Path: project, Polytoken: true})
+
+			rs := doctor.Run(env)
+			r := find(rs, "polytoken: skills + context")
+			Expect(r.Status).To(Equal(doctor.OK))
+			Expect(r.Detail).To(ContainSubstring("not present"))
+		})
+
+		It("recognizes a broken symlink at the standalone file as present and fails integrity", func() {
+			Expect(os.Symlink(filepath.Join(env.PolytokenDir, "nonexistent"), filepath.Join(env.PolytokenDir, "herdle.md"))).To(Succeed())
+
+			rs := doctor.Run(env)
+			r := find(rs, "polytoken: skills + context")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).NotTo(ContainSubstring("not present"))
+		})
+	})
+
 	Describe("checks registry-wide Polytoken scope conflicts", func() {
 		BeforeEach(func() {
 			Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
@@ -363,7 +397,11 @@ var _ = Describe("doctor Polytoken diagnostics", func() {
 
 			rs := doctor.Run(env)
 			Expect(names(rs)).NotTo(ContainElement("polytoken: unregistered project " + elsewhere))
-			Expect(doctor.Failed(rs)).To(BeFalse())
+			// Absent global with no Polytoken projects is expected to fail; verify
+			// the failure is about the missing global, not the outside-cwd install.
+			r := find(rs, "polytoken: skills + context")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring("not present"))
 		})
 
 		It("does not flag cwd when its canonical identity is registered", func() {

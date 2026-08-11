@@ -31,9 +31,16 @@ func checkPolytoken(env Env) []Result {
 	if loadResult != nil {
 		results = append(results, *loadResult)
 	}
+	hasProjectCandidate := false
+	for _, c := range candidates {
+		if c.scope == "project" {
+			hasProjectCandidate = true
+			break
+		}
+	}
 	for _, candidate := range candidates {
 		if candidate.scope == "global" && !recognizablePolytoken(candidate.layout) {
-			results = append(results, absentGlobalPolytokenResults()...)
+			results = append(results, absentGlobalPolytokenResults(hasProjectCandidate)...)
 			continue
 		}
 		if candidate.identityErr != nil {
@@ -79,11 +86,17 @@ func polytokenCandidates(env Env) ([]polytokenCandidate, *Result) {
 	return candidates, nil
 }
 
-func absentGlobalPolytokenResults() []Result {
+func absentGlobalPolytokenResults(hasProjects bool) []Result {
+	status := OK
+	remediation := ""
+	if !hasProjects {
+		status = Fail
+		remediation = polytokenInit
+	}
 	return []Result{
-		{Name: "polytoken: skills + context", Status: OK, Detail: "global installation not present"},
-		{Name: "polytoken: AGENTS.md link", Status: OK, Detail: "global installation not present"},
-		{Name: "polytoken: lifecycle gatekeeper", Status: OK, Detail: "global installation not present"},
+		{Name: "polytoken: skills + context", Status: status, Detail: "global installation not present", Remediation: remediation},
+		{Name: "polytoken: AGENTS.md link", Status: status, Detail: "global installation not present", Remediation: remediation},
+		{Name: "polytoken: lifecycle gatekeeper", Status: status, Detail: "global installation not present", Remediation: remediation},
 	}
 }
 
@@ -119,7 +132,7 @@ func checkPolytokenCandidate(env Env, candidate polytokenCandidate) []Result {
 }
 
 func recognizablePolytoken(layout initcmd.PolytokenLayout) bool {
-	if _, err := os.Stat(filepath.Join(layout.StandaloneDir, "herdle.md")); err == nil {
+	if _, err := os.Lstat(filepath.Join(layout.StandaloneDir, "herdle.md")); err == nil {
 		return true
 	}
 	if initcmd.HasAgentContextSignature(layout.ContextPath) {

@@ -84,6 +84,12 @@ var _ = Describe("herdle doctor", func() {
 		Expect(env.CWD).To(Equal(project))
 	})
 
+	It("does not resolve cwd for Claude-only doctor", func() {
+		env, err := buildDoctorEnv([]agent.Name{agent.Claude})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(env.CWD).To(BeEmpty())
+	})
+
 	It("returns strict failure for a drifted registered project", func() {
 		project := filepath.Join(home, "registered")
 		cfgPath := filepath.Join(home, "config.toml")

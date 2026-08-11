@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/geofffranks/herdle/internal/agent"
+	"github.com/geofffranks/herdle/internal/config"
 	"github.com/geofffranks/herdle/internal/doctor"
 	"github.com/geofffranks/herdle/internal/initcmd"
 	"github.com/geofffranks/herdle/internal/vcs/vcsfakes"
@@ -96,6 +97,21 @@ func names(rs []doctor.Result) []string {
 	return out
 }
 
+func installProjectPolytoken(env doctor.Env, project string) {
+	layout := initcmd.PolytokenLayout{
+		StandaloneDir:  filepath.Join(project, ".polytoken"),
+		HooksPath:      filepath.Join(project, ".polytoken", "hooks.json"),
+		ContextPath:    filepath.Join(project, "AGENTS.md"),
+		ContextInclude: "@.polytoken/herdle.md",
+	}
+	_, err := initcmd.InstallPolytokenLayout(env.PolytokenAssets, layout, env.PolytokenCommand, false)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func saveDoctorConfig(env doctor.Env, projects ...config.Project) {
+	Expect((&config.Config{Projects: projects}).SaveTo(env.ConfigPath)).To(Succeed())
+}
+
 var _ = Describe("doctor harness composition", func() {
 	It("defaults an empty selection to Claude and runs common checks once", func() {
 		Expect(names(doctor.Run(goodEnv()))).To(Equal([]string{
@@ -111,6 +127,7 @@ var _ = Describe("doctor harness composition", func() {
 		Expect(names(doctor.Run(env))).To(Equal([]string{
 			"git", "tk", "gh", "gh auth", "glab", "glab auth", "herdle on PATH", "config",
 			"polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper",
+			"polytoken: installation scopes",
 		}))
 	})
 
@@ -120,6 +137,7 @@ var _ = Describe("doctor harness composition", func() {
 		Expect(names(doctor.Run(env))).To(Equal([]string{
 			"git", "tk", "gh", "gh auth", "glab", "glab auth", "herdle on PATH", "config",
 			"polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper",
+			"polytoken: installation scopes",
 			"superpowers", "claude: skills + rule", "claude: lifecycle gatekeeper",
 		}))
 	})
@@ -135,9 +153,230 @@ var _ = Describe("doctor Polytoken diagnostics", func() {
 
 	It("reports every healthy Polytoken row OK", func() {
 		rs := doctor.Run(env)
-		for _, name := range []string{"polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper"} {
+		for _, name := range []string{"polytoken: installation scopes", "polytoken: skills + context", "polytoken: AGENTS.md link", "polytoken: lifecycle gatekeeper"} {
 			Expect(find(rs, name).Status).To(Equal(doctor.OK), name)
 		}
+	})
+
+	Describe("validates registered Polytoken candidates", func() {
+		It("reports scope-qualified rows for every healthy registered project", func() {
+			first := GinkgoT().TempDir()
+			second := GinkgoT().TempDir()
+			installProjectPolytoken(env, first)
+			installProjectPolytoken(env, second)
+			saveDoctorConfig(env,
+				config.Project{Path: first, Polytoken: true},
+				config.Project{Path: second, Polytoken: true},
+			)
+
+			rs := doctor.Run(env)
+			for _, project := range []string{first, second} {
+				for _, component := range []string{"skills + context", "AGENTS.md link", "lifecycle gatekeeper"} {
+					name := "polytoken: project " + project + ": " + component
+					Expect(find(rs, name).Status).To(Equal(doctor.OK), name)
+				}
+			}
+		})
+
+		It("fails all integrity rows for a missing registered project with exact remediation", func() {
+			project := filepath.Join(GinkgoT().TempDir(), "missing")
+			saveDoctorConfig(env, config.Project{Path: project, Polytoken: true})
+			command := "cd '" + project + "' && herdle init --agent polytoken --scope project"
+
+			rs := doctor.Run(env)
+			for _, component := range []string{"skills + context", "AGENTS.md link", "lifecycle gatekeeper"} {
+				r := find(rs, "polytoken: project "+project+": "+component)
+				Expect(r.Status).NotTo(Equal(doctor.OK), component)
+				Expect(r.Detail).To(ContainSubstring(project))
+				Expect(r.Remediation).To(ContainSubstring(command))
+			}
+		})
+
+		DescribeTable("recognizes malformed global ownership signatures and reports integrity failure",
+			func(path, contents string) {
+				Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
+				Expect(os.MkdirAll(env.PolytokenDir, 0o750)).To(Succeed())
+				Expect(os.WriteFile(filepath.Join(env.PolytokenDir, path), []byte(contents), 0o600)).To(Succeed())
+
+				rs := doctor.Run(env)
+				Expect(find(rs, "polytoken: skills + context").Detail).NotTo(ContainSubstring("not present"))
+				if path == "AGENTS.md" {
+					Expect(find(rs, "polytoken: AGENTS.md link").Status).To(Equal(doctor.Fail))
+				} else {
+					Expect(find(rs, "polytoken: lifecycle gatekeeper").Status).To(Equal(doctor.Fail))
+				}
+			},
+			Entry("context marker", "AGENTS.md", "<!-- herdle:begin -->\n"),
+			Entry("named hook", "hooks.json", `[{"name":"herdle-gatekeeper"`),
+		)
+
+		DescribeTable("recognizes every partial global signature and reports missing integrity",
+			func(signature string) {
+				Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
+				Expect(os.MkdirAll(env.PolytokenDir, 0o750)).To(Succeed())
+				switch signature {
+				case "standalone":
+					Expect(os.WriteFile(filepath.Join(env.PolytokenDir, "herdle.md"), []byte("context\n"), 0o600)).To(Succeed())
+				case "context":
+					Expect(os.WriteFile(filepath.Join(env.PolytokenDir, "AGENTS.md"), []byte("<!-- herdle:begin -->\n@herdle.md\n<!-- herdle:end -->\n"), 0o600)).To(Succeed())
+				case "hook":
+					contents := `[{"name":"herdle-gatekeeper","event":"pre_tool_use","matcher":"*","handler":{"bash":"` + env.PolytokenCommand + `"}}]`
+					Expect(os.WriteFile(env.PolytokenHooksPath, []byte(contents), 0o600)).To(Succeed())
+				}
+
+				rs := doctor.Run(env)
+				Expect([]doctor.Status{
+					find(rs, "polytoken: skills + context").Status,
+					find(rs, "polytoken: AGENTS.md link").Status,
+					find(rs, "polytoken: lifecycle gatekeeper").Status,
+				}).To(ContainElement(doctor.Fail))
+			},
+			Entry("standalone file", "standalone"),
+			Entry("managed context marker", "context"),
+			Entry("named hook", "hook"),
+		)
+	})
+
+	Describe("checks registry-wide Polytoken scope conflicts", func() {
+		BeforeEach(func() {
+			Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
+		})
+
+		DescribeTable("classifies project scope overlap",
+			func(first, second string, conflict bool) {
+				root := GinkgoT().TempDir()
+				paths := []string{filepath.Join(root, first), filepath.Join(root, second)}
+				projects := make([]config.Project, len(paths))
+				for i, path := range paths {
+					projects[i] = config.Project{Path: path, Polytoken: true}
+				}
+				saveDoctorConfig(env, projects...)
+				r := find(doctor.Run(env), "polytoken: installation scopes")
+				if conflict {
+					Expect(r.Status).To(Equal(doctor.Fail))
+					for _, path := range paths {
+						Expect(r.Detail).To(ContainSubstring(path))
+						Expect(r.Remediation).To(ContainSubstring("cd '" + path + "' && herdle init --agent polytoken --scope project --uninstall"))
+					}
+				} else {
+					Expect(r.Status).To(Equal(doctor.OK))
+				}
+			},
+			Entry("equal", "same", "same", true),
+			Entry("ancestor and descendant", ".", "child", true),
+			Entry("siblings", "one", "two", false),
+			Entry("prefix lookalikes", "app", "app-two", false),
+		)
+
+		It("fails global plus any registered project", func() {
+			env = withHealthyPolytoken(env)
+			project := filepath.Join(GinkgoT().TempDir(), "registered")
+			saveDoctorConfig(env, config.Project{Path: project, Polytoken: true})
+
+			r := find(doctor.Run(env), "polytoken: installation scopes")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring(env.PolytokenDir))
+			Expect(r.Detail).To(ContainSubstring(project))
+			Expect(r.Remediation).To(ContainSubstring("herdle init --agent polytoken --scope global --uninstall"))
+			Expect(r.Remediation).To(ContainSubstring("cd '" + project + "' && herdle init --agent polytoken --scope project --uninstall"))
+		})
+	})
+
+	Describe("diagnoses unresolved registered project paths", func() {
+		BeforeEach(func() {
+			Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
+		})
+
+		DescribeTable("retains a deterministic best-effort identity",
+			func(kind string) {
+				root := GinkgoT().TempDir()
+				project := filepath.Join(root, "project")
+				if kind == "missing parent" {
+					project = filepath.Join(root, "missing", "project")
+				}
+				if kind == "broken symlink" {
+					link := filepath.Join(root, "broken")
+					Expect(os.Symlink(filepath.Join(root, "absent"), link)).To(Succeed())
+					project = filepath.Join(link, "project")
+				}
+				saveDoctorConfig(env, config.Project{Path: project, Polytoken: true})
+				r := find(doctor.Run(env), "polytoken: project "+project+": path identity")
+				Expect(r.Status).To(Equal(doctor.Fail))
+				Expect(r.Detail).To(ContainSubstring(project))
+				Expect(r.Remediation).To(ContainSubstring("cd '" + project + "' && herdle init --agent polytoken --scope project"))
+			},
+			Entry("missing parent", "missing parent"),
+			Entry("missing child", "missing child"),
+			Entry("broken symlink", "broken symlink"),
+		)
+
+		It("appends an unresolved suffix to the longest physically resolved ancestor", func() {
+			physical := GinkgoT().TempDir()
+			alias := filepath.Join(GinkgoT().TempDir(), "alias")
+			Expect(os.Symlink(physical, alias)).To(Succeed())
+			stored := filepath.Join(alias, "missing", "project")
+			identity := filepath.Join(physical, "missing", "project")
+			saveDoctorConfig(env, config.Project{Path: stored, Polytoken: true})
+
+			r := find(doctor.Run(env), "polytoken: project "+identity+": path identity")
+			Expect(r.Detail).To(ContainSubstring(identity))
+			Expect(r.Remediation).To(ContainSubstring("cd '" + identity + "'"))
+		})
+
+		It("uses an unresolved identity in overlap checks against an existing path", func() {
+			root := GinkgoT().TempDir()
+			missing := filepath.Join(root, "missing")
+			saveDoctorConfig(env,
+				config.Project{Path: root, Polytoken: true},
+				config.Project{Path: missing, Polytoken: true},
+			)
+			r := find(doctor.Run(env), "polytoken: installation scopes")
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring(root))
+			Expect(r.Detail).To(ContainSubstring(missing))
+		})
+	})
+
+	Describe("detects unregistered current-cwd drift", func() {
+		BeforeEach(func() {
+			Expect(os.RemoveAll(env.PolytokenDir)).To(Succeed())
+		})
+
+		It("fails a recognizable unregistered current project install", func() {
+			project := GinkgoT().TempDir()
+			installProjectPolytoken(env, project)
+			env.CWD = project
+			saveDoctorConfig(env)
+
+			r := find(doctor.Run(env), "polytoken: unregistered project "+project)
+			Expect(r.Status).To(Equal(doctor.Fail))
+			Expect(r.Detail).To(ContainSubstring(project))
+			Expect(r.Remediation).To(ContainSubstring("cd '" + project + "' && herdle init --agent polytoken --scope project"))
+			Expect(r.Remediation).To(ContainSubstring("cd '" + project + "' && herdle init --agent polytoken --scope project --uninstall"))
+		})
+
+		It("does not inspect recognizable unregistered paths outside cwd", func() {
+			elsewhere := GinkgoT().TempDir()
+			installProjectPolytoken(env, elsewhere)
+			env.CWD = GinkgoT().TempDir()
+			saveDoctorConfig(env, config.Project{Path: elsewhere})
+
+			rs := doctor.Run(env)
+			Expect(names(rs)).NotTo(ContainElement("polytoken: unregistered project " + elsewhere))
+			Expect(doctor.Failed(rs)).To(BeFalse())
+		})
+
+		It("does not flag cwd when its canonical identity is registered", func() {
+			project := GinkgoT().TempDir()
+			alias := filepath.Join(GinkgoT().TempDir(), "alias")
+			Expect(os.Symlink(project, alias)).To(Succeed())
+			installProjectPolytoken(env, project)
+			env.CWD = alias
+			saveDoctorConfig(env, config.Project{Path: project, Polytoken: true})
+
+			rs := doctor.Run(env)
+			Expect(names(rs)).NotTo(ContainElement("polytoken: unregistered project " + project))
+		})
 	})
 
 	It("fails missing standalone content with the exact init command", func() {

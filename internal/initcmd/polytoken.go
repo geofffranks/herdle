@@ -138,6 +138,20 @@ func contextBlock(include string) string {
 	return contextBegin + "\n" + include + "\n" + contextEnd + "\n"
 }
 
+// HasPolytokenHookSignature reports whether hooks.json contains the Herdle-owned
+// hook name, including malformed partial state that inspection must diagnose.
+func HasPolytokenHookSignature(path string) bool {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller explicitly supplies diagnostic path
+	return err == nil && bytes.Contains(data, []byte(polytokenHookName))
+}
+
+// HasAgentContextSignature reports whether AGENTS.md contains either Herdle-owned
+// context marker, including malformed partial state that inspection must diagnose.
+func HasAgentContextSignature(path string) bool {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller explicitly supplies diagnostic path
+	return err == nil && (bytes.Contains(data, []byte(contextBegin)) || bytes.Contains(data, []byte(contextEnd)))
+}
+
 // InspectPolytokenHooks reads and validates hooks.json without changing it.
 func InspectPolytokenHooks(path string) (PolytokenHookInspection, error) {
 	parsed, _, err := parsePolytokenHooks(path)
@@ -152,7 +166,13 @@ func InspectPolytokenHooks(path string) (PolytokenHookInspection, error) {
 
 // InspectAgentContext reads and validates global AGENTS.md context without changing it.
 func InspectAgentContext(path string) (AgentContextInspection, error) {
-	parsed, _, err := parseAgentContext(path, contextBlock(globalContextInclude))
+	return InspectAgentContextInclude(path, globalContextInclude)
+}
+
+// InspectAgentContextInclude reads and validates an AGENTS.md managed block for
+// the supplied scope-specific include without changing it.
+func InspectAgentContextInclude(path, include string) (AgentContextInspection, error) {
+	parsed, _, err := parseAgentContext(path, contextBlock(include))
 	if err != nil {
 		return AgentContextInspection{}, err
 	}

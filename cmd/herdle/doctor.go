@@ -71,6 +71,14 @@ func buildDoctorEnv(selected []agent.Name) (doctor.Env, error) {
 		return doctor.Env{}, err
 	}
 	herdleOnPath, _ := exec.LookPath("herdle") // "" when not found — not an error here
+	cwd, err := os.Getwd()
+	if err != nil {
+		return doctor.Env{}, err
+	}
+	cwd, err = config.CanonicalProjectPath(cwd)
+	if err != nil {
+		return doctor.Env{}, err
+	}
 	return doctor.Env{
 		Git:                vcs.NewGitRunner(),
 		GH:                 vcs.NewGHRunner(),
@@ -83,6 +91,7 @@ func buildDoctorEnv(selected []agent.Name) (doctor.Env, error) {
 		PolytokenDir:       polytokenDir,
 		PolytokenHooksPath: filepath.Join(polytokenDir, "hooks.json"),
 		PolytokenCommand:   initcmd.PolytokenGatekeeperCommand(),
+		CWD:                cwd,
 		ConfigPath:         configPath,
 		SettingsPath:       settingsPath,
 		ExecPath:           exe,

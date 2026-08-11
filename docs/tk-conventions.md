@@ -100,32 +100,48 @@ always include it.
 ## Review evidence and lifecycle order
 
 Every implementation plan ends with separate **Code Review** and **Finalize**
-tasks. Code Review always runs two independent passes in order, regardless of
-diff size:
+tasks. Code Review runs one fresh final integration review of the full branch
+diff against its base. Address valid Critical and Important findings as a
+complete batch. Incremental rereview is required only after review fixes change
+the branch.
 
-1. **Standard review** inspects the full branch diff against its base; address
-   every valid finding and verify the fixes.
-2. **Deep review** starts with fresh reviewer context and broader scrutiny of
-   correctness, regressions, maintainability, and requirement compliance;
-   address every valid finding and rerun verification.
-
-Do not reuse the standard pass as the deep pass or replace either with informal
-self-review. Record durable evidence in this exact order, leaving each marker
-unchecked until that review or findings work is actually complete:
+Finalize records durable evidence in one ticket-correlated validation document.
+Use exactly one of these forms, checking each line only after its work is
+complete. When no review fix changed the branch, use the three-line form:
 
 ```markdown
 ## Herdle code review
 
-- [ ] Standard review completed
-- [ ] Standard review findings addressed
-- [ ] Deep review completed
-- [ ] Deep review findings addressed
+- [x] Final integration review completed
+- [x] Final integration review findings addressed
+- [x] Final integration rereview not required
 ```
 
-Only after both passes, their fixes, and all four checked markers are on disk may
-the ticket move to `pending-validation`. Check automated validation boxes only
-for commands actually run; leave human-only boxes open and do not move to
-`validated` until a human completes them.
+When review fixes changed the branch and the resulting rereview is complete, use
+the four-line form:
+
+```markdown
+## Herdle code review
+
+- [x] Final integration review completed
+- [x] Final integration review findings addressed
+- [x] Final integration rereview completed
+- [x] Final integration rereview findings addressed
+```
+
+New validation documents use only one of the final-integration forms above.
+Legacy four-line Standard/Deep markers remain accepted indefinitely for existing
+validation documents. Herdle does not automatically expire or rewrite legacy
+evidence.
+
+Only after review work and one complete supported evidence form are on disk may
+the ticket move forward from `in-development` to `pending-validation`. A rollback
+from `validated` to `pending-validation`, or an idempotent rewrite already at
+`pending-validation`, does not require a new review. For an exceptional forward
+transition, add the reason-bearing `[skip-code-review-gate] <reason>` override;
+a bare override marker is rejected. Check automated validation boxes only for
+commands actually run; leave human-only boxes open and do not move to `validated`
+until a human completes them.
 
 ---
 

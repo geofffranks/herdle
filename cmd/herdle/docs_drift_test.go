@@ -253,5 +253,37 @@ var _ = Describe("docs drift guard", func() {
 			invalid := invalidCommandRefTokens(rows, s)
 			Expect(invalid).To(BeEmpty(), "command reference names unknown surface: %v", invalid)
 		})
+
+		It("contains no mandatory standard/deep or medium/high review recipe", func() {
+			corpus := readDocsCorpus(root)
+			for _, stale := range []string{
+				"Code Review always runs two independent passes",
+				"- [ ] Standard review completed",
+				"complete a standard review first and a fresh deep review second",
+				"equivalent `medium` then `high` `/code-review` evidence",
+			} {
+				Expect(corpus).NotTo(ContainSubstring(stale), "stale mandatory review recipe: %q", stale)
+			}
+		})
+
+		It("documents legacy acceptance and new-only generation", func() {
+			corpus := strings.Join(strings.Fields(readDocsCorpus(root)), " ")
+			for _, fact := range []string{
+				"ticket-correlated validation document",
+				"Legacy four-line Standard/Deep markers remain accepted indefinitely",
+				"New validation documents use only one of the final-integration forms above",
+				"Herdle does not automatically expire or rewrite legacy evidence",
+			} {
+				Expect(corpus).To(ContainSubstring(fact), "missing compatibility contract: %q", fact)
+			}
+		})
+
+		It("documents conditional incremental rereview", func() {
+			corpus := strings.Join(strings.Fields(readDocsCorpus(root)), " ")
+			Expect(corpus).To(ContainSubstring("Incremental rereview is required only after review fixes change the branch"))
+			Expect(corpus).To(ContainSubstring("- [x] Final integration rereview not required"))
+			Expect(corpus).To(ContainSubstring("- [x] Final integration rereview completed"))
+			Expect(corpus).To(ContainSubstring("- [x] Final integration rereview findings addressed"))
+		})
 	})
 })

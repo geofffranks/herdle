@@ -129,12 +129,18 @@ Common dependency/config rows are rendered once. Claude adds `superpowers`,
 - `polytoken: AGENTS.md link`
 - `polytoken: lifecycle gatekeeper`
 
-Doctor verifies the exact installed content, managed context markers, and hook
-command. A missing row points to `herdle init --agent polytoken`; stale standalone
-content points to `herdle init --agent polytoken --force`; malformed shared files
-must be repaired before rerunning init. `herdle doctor` exits non-zero if any
-required dependency is missing or configuration is incomplete, making it useful
-in scripts and CI.
+Doctor verifies the exact installed compatibility assets, managed context
+markers, and lifecycle gatekeeper command for each selected harness. A healthy
+skills row means the installed workflow generates the current final-integration
+evidence forms; it does not mean legacy project evidence was rewritten or needs
+migration. A healthy gatekeeper row means lifecycle edits are routed to the
+installed compatibility gate. A missing row points to `herdle init` with the
+same `--agent` selection; stale standalone content points to the same command
+with `--force`; malformed shared files must be repaired before rerunning init.
+After a repair or refresh, reload Claude Code and start a new Polytoken session
+(or restart its client). `herdle doctor` exits non-zero if any required
+dependency is missing or configuration is incomplete, making it useful in
+scripts and CI.
 
 ---
 

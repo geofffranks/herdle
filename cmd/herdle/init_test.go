@@ -143,6 +143,21 @@ var _ = Describe("herdle init", func() {
 		Expect(strings.Count(out, "seeded ")).To(Equal(1))
 	})
 
+	It("installs final-integration contract assets for both harnesses", func() {
+		Expect(app.Run([]string{"herdle", "init", "--agent", "claude", "--agent", "polytoken"})).To(Succeed())
+
+		for _, path := range []string{skill2(), polytokenSkill2()} {
+			data, err := os.ReadFile(path) // #nosec G304 -- test reads an installed embedded skill
+			Expect(err).NotTo(HaveOccurred())
+			content := string(data)
+			Expect(content).To(ContainSubstring("- [x] Final integration review completed"))
+			Expect(content).To(ContainSubstring("- [x] Final integration review findings addressed"))
+			Expect(content).To(ContainSubstring("- [x] Final integration rereview not required"))
+			Expect(content).To(ContainSubstring("- [x] Final integration rereview completed"))
+			Expect(content).To(ContainSubstring("- [x] Final integration rereview findings addressed"))
+		}
+	})
+
 	It("deduplicates repeated agents", func() {
 		Expect(app.Run([]string{"herdle", "init", "--agent", "polytoken", "--agent", "polytoken"})).To(Succeed())
 		Expect(polytokenSkill()).To(BeAnExistingFile())

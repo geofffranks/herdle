@@ -370,15 +370,35 @@ func ClaudeReviewEvidence(r io.Reader, ticketPath string) ReviewEvidence {
 	return ev
 }
 
-var polytokenReviewMarkers = []struct {
-	key  string
-	line string
-}{
-	{"standard-completed", "- [x] Standard review completed"},
-	{"standard-addressed", "- [x] Standard review findings addressed"},
-	{"deep-completed", "- [x] Deep review completed"},
-	{"deep-addressed", "- [x] Deep review findings addressed"},
+var reviewContracts = [][]string{
+	{
+		"- [x] Standard review completed",
+		"- [x] Standard review findings addressed",
+		"- [x] Deep review completed",
+		"- [x] Deep review findings addressed",
+	},
+	{
+		"- [x] Final integration review completed",
+		"- [x] Final integration review findings addressed",
+		"- [x] Final integration rereview not required",
+	},
+	{
+		"- [x] Final integration review completed",
+		"- [x] Final integration review findings addressed",
+		"- [x] Final integration rereview completed",
+		"- [x] Final integration rereview findings addressed",
+	},
 }
+
+var reviewMarkerLines = func() map[string]bool {
+	lines := map[string]bool{}
+	for _, contract := range reviewContracts {
+		for _, line := range contract {
+			lines[line] = true
+		}
+	}
+	return lines
+}()
 
 func markdownFence(line string) (char byte, run int, trailingWhitespace bool) {
 	leadingSpaces := 0
@@ -399,53 +419,84 @@ func markdownFence(line string) (char byte, run int, trailingWhitespace bool) {
 	return char, run, strings.TrimSpace(trimmed[run:]) == ""
 }
 
-// PolytokenReviewEvidence recognizes each durable validation-doc marker only
-// when its complete line occurs exactly once outside fenced code blocks.
-func PolytokenReviewEvidence(docs []string, found bool) ReviewEvidence {
+// DocumentReviewEvidence accepts exactly one complete review contract in one
+// correlated durable document. Exact marker lines inside Markdown fences do not
+// count; duplicate, mixed, partial, or split-across-document evidence is denied.
+func DocumentReviewEvidence(docs []string, found bool) ReviewEvidence {
 	ev := ReviewEvidence{
-		ReadOK:       found,
-		Required:     make([]string, 0, len(polytokenReviewMarkers)),
-		Present:      map[string]bool{},
-		Unreadable:   polytokenUnreadableReason,
-		BlockedIntro: polytokenBlockedIntro,
+		ReadOK:        found,
+		Required:      []string{"complete-review-contract"},
+		Present:       map[string]bool{},
+		Unreadable:    reviewUnreadableReason,
+		BlockedIntro:  reviewBlockedIntro,
+		BlockedSuffix: reviewBlockedSuffix,
 	}
-	counts := map[string]int{}
-	for _, marker := range polytokenReviewMarkers {
-		ev.Required = append(ev.Required, marker.key)
-	}
+	complete := 0
+	var matchedContract []string
+	totals := map[string]int{}
 	for _, doc := range docs {
-		var fenceChar byte
-		fenceLen := 0
-		sc := bufio.NewScanner(strings.NewReader(doc))
-		sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
-		for sc.Scan() {
-			line := sc.Text()
-			char, run, trailingWhitespace := markdownFence(line)
-			if fenceLen == 0 {
-				if run >= 3 {
-					fenceChar, fenceLen = char, run
-					continue
-				}
-			} else {
-				if char == fenceChar && run >= fenceLen && trailingWhitespace {
-					fenceChar, fenceLen = 0, 0
-				}
+		counts, ok := reviewMarkerCounts(doc)
+		if !ok {
+			ev.ReadOK = false
+			continue
+		}
+		for line, count := range counts {
+			totals[line] += count
+		}
+		for _, contract := range reviewContracts {
+			if matchesReviewContract(counts, contract) {
+				complete++
+				matchedContract = contract
+			}
+		}
+	}
+	ev.Present["complete-review-contract"] = complete == 1 && matchesReviewContract(totals, matchedContract)
+	return ev
+}
+
+// PolytokenReviewEvidence is retained for source compatibility with callers
+// compiled against the harness-specific name.
+func PolytokenReviewEvidence(docs []string, found bool) ReviewEvidence {
+	return DocumentReviewEvidence(docs, found)
+}
+
+func reviewMarkerCounts(doc string) (map[string]int, bool) {
+	counts := map[string]int{}
+	var fenceChar byte
+	fenceLen := 0
+	sc := bufio.NewScanner(strings.NewReader(doc))
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := sc.Text()
+		char, run, trailingWhitespace := markdownFence(line)
+		if fenceLen == 0 {
+			if run >= 3 {
+				fenceChar, fenceLen = char, run
 				continue
 			}
-			for _, marker := range polytokenReviewMarkers {
-				if line == marker.line {
-					counts[marker.key]++
-				}
+		} else {
+			if char == fenceChar && run >= fenceLen && trailingWhitespace {
+				fenceChar, fenceLen = 0, 0
 			}
+			continue
 		}
-		if sc.Err() != nil {
-			ev.ReadOK = false
+		if reviewMarkerLines[line] {
+			counts[line]++
 		}
 	}
-	for _, marker := range polytokenReviewMarkers {
-		ev.Present[marker.key] = counts[marker.key] == 1
+	return counts, sc.Err() == nil
+}
+
+func matchesReviewContract(counts map[string]int, contract []string) bool {
+	if len(counts) != len(contract) {
+		return false
 	}
-	return ev
+	for _, line := range contract {
+		if counts[line] != 1 {
+			return false
+		}
+	}
+	return true
 }
 
 // Env carries everything Decide needs, pre-read by the cmd adapter so the core
@@ -570,10 +621,12 @@ const claudeBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires a 
 const claudeBlockedSuffix = " Invoke the code-review Skill directly (not a hand-rolled sweep or a subagent), " +
 	"or add [skip-code-review-gate] <reason>."
 
-const polytokenUnreadableReason = "Gatekeeper: cannot read the ticket-correlated validation doc to verify the Polytoken review markers. " +
-	"Record the standard and deep review completion and findings-addressed markers, or add [skip-code-review-gate] <reason>."
+const reviewUnreadableReason = "Gatekeeper: cannot read a ticket-correlated validation document to verify durable review evidence. " +
+	"Record one complete supported review contract, or add [skip-code-review-gate] <reason>."
 
-const polytokenBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires durable Polytoken review evidence. Missing: "
+const reviewBlockedIntro = "Gatekeeper: lifecycle:pending-validation requires one complete durable review contract. Missing: "
+
+const reviewBlockedSuffix = " Record one complete legacy, clean final-integration, or completed-rereview contract in a single ticket-correlated validation document, or add [skip-code-review-gate] <reason>."
 
 const monotonicReason = "Gatekeeper: lifecycle:validated requires the ticket to be at " +
 	"pending-validation first (no skipping). Bump to pending-validation (which runs the code-review " +

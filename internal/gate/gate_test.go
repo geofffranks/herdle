@@ -168,126 +168,70 @@ var _ = Describe("EffortsFromTranscript", func() {
 	})
 })
 
-var _ = Describe("PolytokenReviewEvidence", func() {
-	markers := []string{
-		"- [x] Standard review completed",
-		"- [x] Standard review findings addressed",
-		"- [x] Deep review completed",
-		"- [x] Deep review findings addressed",
+var _ = Describe("ReviewEvidence contracts", func() {
+	legacy := "## Herdle code review\n\n" +
+		"- [x] Standard review completed\n" +
+		"- [x] Standard review findings addressed\n" +
+		"- [x] Deep review completed\n" +
+		"- [x] Deep review findings addressed\n"
+	clean := "## Herdle code review\n\n" +
+		"- [x] Final integration review completed\n" +
+		"- [x] Final integration review findings addressed\n" +
+		"- [x] Final integration rereview not required\n"
+	rereview := "## Herdle code review\n\n" +
+		"- [x] Final integration review completed\n" +
+		"- [x] Final integration review findings addressed\n" +
+		"- [x] Final integration rereview completed\n" +
+		"- [x] Final integration rereview findings addressed\n"
+
+	allowed := func(docs []string, readable bool) bool {
+		ev := gate.DocumentReviewEvidence(docs, readable)
+		in := gate.HookInput{ToolName: "Edit", FilePath: "/repo/.tickets/her-x.md", WrittenText: "lifecycle: pending-validation\n"}
+		return gate.Decide(in, gate.Env{Transition: gate.ToPendingValidation, ReviewEvidence: ev}).Allow
 	}
-	keys := []string{"standard-completed", "standard-addressed", "deep-completed", "deep-addressed"}
-	doc := func(lines []string) string {
-		return "## Herdle code review\n\n" + strings.Join(lines, "\n") + "\n"
-	}
 
-	It("requires each Polytoken marker exactly once", func() {
-		ev := gate.PolytokenReviewEvidence([]string{doc(markers)}, true)
-		Expect(ev.ReadOK).To(BeTrue())
-		Expect(ev.Present).To(HaveLen(4))
-		for _, key := range keys {
-			Expect(ev.Present[key]).To(BeTrue(), key)
-		}
+	It("accepts the complete legacy four-marker contract", func() {
+		Expect(allowed([]string{legacy}, true)).To(BeTrue())
 	})
-
-	DescribeTable("rejects a missing marker",
-		func(index int) {
-			lines := append([]string(nil), markers...)
-			lines = append(lines[:index], lines[index+1:]...)
-			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
-			Expect(ev.Present[keys[index]]).To(BeFalse())
-		},
-		Entry("standard completed", 0),
-		Entry("standard addressed", 1),
-		Entry("deep completed", 2),
-		Entry("deep addressed", 3),
-	)
-
-	DescribeTable("rejects an unchecked marker",
-		func(index int) {
-			lines := append([]string(nil), markers...)
-			lines[index] = strings.Replace(lines[index], "[x]", "[ ]", 1)
-			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
-			Expect(ev.Present[keys[index]]).To(BeFalse())
-		},
-		Entry("standard completed", 0),
-		Entry("standard addressed", 1),
-		Entry("deep completed", 2),
-		Entry("deep addressed", 3),
-	)
-
-	DescribeTable("rejects an altered marker",
-		func(index int) {
-			lines := append([]string(nil), markers...)
-			lines[index] += "."
-			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
-			Expect(ev.Present[keys[index]]).To(BeFalse())
-		},
-		Entry("standard completed", 0),
-		Entry("standard addressed", 1),
-		Entry("deep completed", 2),
-		Entry("deep addressed", 3),
-	)
-
-	DescribeTable("rejects a duplicate marker",
-		func(index int) {
-			lines := append([]string(nil), markers...)
-			lines = append(lines, markers[index])
-			ev := gate.PolytokenReviewEvidence([]string{doc(lines)}, true)
-			Expect(ev.Present[keys[index]]).To(BeFalse())
-		},
-		Entry("standard completed", 0),
-		Entry("standard addressed", 1),
-		Entry("deep completed", 2),
-		Entry("deep addressed", 3),
-	)
-
-	DescribeTable("recognizes fences with zero to three leading spaces",
-		func(indent string) {
-			fenced := indent + "```markdown\n" + strings.Join(markers, "\n") + "\n" + indent + "```\n"
-			ev := gate.PolytokenReviewEvidence([]string{fenced}, true)
-			for _, key := range keys {
-				Expect(ev.Present[key]).To(BeFalse(), key)
-			}
-		},
-		Entry("zero spaces", ""),
-		Entry("one space", " "),
-		Entry("two spaces", "  "),
-		Entry("three spaces", "   "),
-	)
-
-	DescribeTable("does not recognize four-space or tab-indented backticks as fences",
-		func(indent string) {
-			doc := indent + "```markdown\n" + strings.Join(markers, "\n") + "\n" + indent + "```\n"
-			ev := gate.PolytokenReviewEvidence([]string{doc}, true)
-			for _, key := range keys {
-				Expect(ev.Present[key]).To(BeTrue(), key)
-			}
-		},
-		Entry("four spaces", "    "),
-		Entry("tab", "\t"),
-	)
-
-	It("keeps a three-backtick run inside a four-backtick fence as content", func() {
-		fenced := "````markdown\n```\n" + strings.Join(markers, "\n") + "\n```\n````\n"
-		ev := gate.PolytokenReviewEvidence([]string{fenced}, true)
-		for _, key := range keys {
-			Expect(ev.Present[key]).To(BeFalse(), key)
-		}
+	It("accepts clean final integration review with rereview not required", func() {
+		Expect(allowed([]string{clean}, true)).To(BeTrue())
 	})
-
-	It("excludes markers inside tilde fences", func() {
-		fenced := "~~~markdown\n" + strings.Join(markers, "\n") + "\n~~~   \n"
-		ev := gate.PolytokenReviewEvidence([]string{fenced}, true)
-		for _, key := range keys {
-			Expect(ev.Present[key]).To(BeFalse(), key)
-		}
+	It("accepts final integration review with completed rereview", func() {
+		Expect(allowed([]string{rereview}, true)).To(BeTrue())
 	})
-
-	It("fails closed when scanning a validation doc exceeds the scanner limit", func() {
-		oversized := doc(markers) + strings.Repeat("x", 16*1024*1024+1) + "\n"
-		ev := gate.PolytokenReviewEvidence([]string{oversized}, true)
-		Expect(ev.ReadOK).To(BeFalse())
-		Expect(ev.Unreadable).NotTo(BeEmpty())
+	It("rejects mixed legacy and new contracts", func() {
+		Expect(allowed([]string{legacy + clean}, true)).To(BeFalse())
+	})
+	It("rejects not-required with completed-rereview markers", func() {
+		mixed := clean + "- [x] Final integration rereview completed\n- [x] Final integration rereview findings addressed\n"
+		Expect(allowed([]string{mixed}, true)).To(BeFalse())
+	})
+	It("rejects partial final-integration contracts", func() {
+		partial := strings.Replace(clean, "- [x] Final integration review findings addressed\n", "", 1)
+		Expect(allowed([]string{partial}, true)).To(BeFalse())
+	})
+	It("rejects duplicate exact markers", func() {
+		Expect(allowed([]string{clean + "- [x] Final integration review completed\n"}, true)).To(BeFalse())
+	})
+	It("ignores exact markers inside backtick and tilde fences", func() {
+		fenced := "```markdown\n" + clean + "```\n~~~markdown\n" + rereview + "~~~\n"
+		Expect(allowed([]string{fenced}, true)).To(BeFalse())
+	})
+	It("rejects contracts split across correlated documents", func() {
+		parts := strings.SplitN(clean, "- [x] Final integration rereview not required\n", 2)
+		Expect(allowed([]string{parts[0], "- [x] Final integration rereview not required\n"}, true)).To(BeFalse())
+	})
+	It("rejects a complete contract mixed with another contract across documents", func() {
+		extra := "- [x] Final integration rereview completed\n"
+		Expect(allowed([]string{clean, extra}, true)).To(BeFalse())
+	})
+	It("fails closed for missing or unreadable documents", func() {
+		Expect(allowed(nil, false)).To(BeFalse())
+		Expect(allowed([]string{clean}, false)).To(BeFalse())
+	})
+	It("fails closed when scanning a document exceeds the scanner limit", func() {
+		oversized := clean + strings.Repeat("x", 16*1024*1024+1) + "\n"
+		Expect(allowed([]string{oversized}, true)).To(BeFalse())
 	})
 })
 

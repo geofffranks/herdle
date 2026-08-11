@@ -57,47 +57,56 @@ silently skipped.
 
 **Code Review (second-to-last task):**
 
-Two passes, in order. The **controller invokes the `/code-review` Skill directly**
-(it spawns its own finder agents) — do **not** delegate the invocation to a
-dispatched subagent. A subagent's `/code-review` call is recorded only in that
-subagent's transcript, never in the main session transcript, so a delegated pass
-both loses the evidence trail and trips the code-review gate (a PreToolUse hook
-that blocks the `lifecycle: pending-validation` bump unless both passes appear in
-this session's transcript). The invocation is fixed — run it exactly:
+After all implementation tasks are approved, run **one fresh final integration
+review** of the full branch diff against its base. Defer the review process to
+`superpowers:requesting-code-review`; Herdle does not require a harness-specific
+review command.
 
-1. `/code-review <branch> medium --fix`
-2. `/code-review <branch> high --fix`
+Collect all valid Critical and Important findings before changing the branch,
+then address those **Critical and Important findings** as **one complete fixer
+batch**. Do not alternate between fixing and rereviewing one finding at a time.
+Rereview the final integration only after branch-changing fixes. If review
+requires no branch-changing fixes, record that rereview was not required. If a
+rereview finds Critical or Important issues, collect and fix them as another
+complete batch, then rereview **only after branch-changing fixes**.
 
-Each pass means **one `code-review` Skill-tool invocation per effort level.** A
-trimmed fan-out, a single hand-dispatched review subagent, the
-`subagent-driven-development` whole-branch review, or "I already reviewed
-thoroughly" do **not** count — they are a different mechanism and miss a different
-bug class. The mandate is **unconditional on diff size**: a small or clean diff is
-when you are most tempted to skip and most likely to be wrong.
-
-`--fix` is mandatory: without it the pass prints findings and changes nothing,
-which reads as "reviewed" but isn't. Do **not** add `--comment` — that posts to a
-PR, and no PR exists yet. Address every finding from both passes. Defer the review
-*process* to `superpowers:requesting-code-review`. Record both invocations (the
-`medium` and `high` runs) in the SDD progress ledger as the Finalize evidence.
-
-<HARD-GATE>
-You MUST complete both passes before Finalize advances the lifecycle. A clean-
-looking diff does not exempt you — "looks fine" is not a review. Skipping or
-weakening either pass is a defect, not a judgment call.
-</HARD-GATE>
-
-The gatekeeper's other transitions have their own reason-bearing overrides —
-`[skip-branch-linkage] <reason>` (in-development) and `[skip-validation-gate]
-<reason>` (validated) — exceptional escape hatches, not routine.
+Keep the Code Review task open until the review, required fixes, and any required
+rereview are complete. The gatekeeper's other transitions have their own
+reason-bearing overrides — `[skip-branch-linkage] <reason>` (in-development) and
+`[skip-validation-gate] <reason>` (validated) — exceptional escape hatches, not
+routine.
 
 **Finalize (last task):**
 
-- Set `lifecycle: pending-validation` — **only after the Code Review task is
-  complete.** Both passes done and their findings addressed is the precondition
-  for this bump.
-- Write the validation doc (`docs/superpowers/validation/...-validation.md`) with
-  concrete acceptance steps.
+Write the validation doc (`docs/superpowers/validation/...-validation.md`) with
+concrete acceptance steps. Emit **exactly one of these mutually exclusive forms**,
+checking its lines only after the corresponding work is complete.
+
+When the final integration review required no branch-changing fixes:
+
+```markdown
+## Herdle code review
+
+- [x] Final integration review completed
+- [x] Final integration review findings addressed
+- [x] Final integration rereview not required
+```
+
+When branch-changing fixes were made and final integration rereview completed:
+
+```markdown
+## Herdle code review
+
+- [x] Final integration review completed
+- [x] Final integration review findings addressed
+- [x] Final integration rereview completed
+- [x] Final integration rereview findings addressed
+```
+
+Then:
+
+- Set `lifecycle: pending-validation` only after Code Review is complete and the
+  matching durable evidence form is on disk.
 - Structure the validation doc into **automated** and **human** sections. Write a
   script that exercises as much of the automated section as it can, run it, and
   check off only the steps it actually covered. **Human-only steps stay `- [ ]`.**

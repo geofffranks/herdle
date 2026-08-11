@@ -52,34 +52,47 @@ work with `todo_complete`.
 
 ### Code Review
 
-Run two independent passes in order, regardless of diff size:
+After all implementation tasks are approved, run **one fresh final integration
+review** of the full branch diff against its base. Defer the review process to
+`requesting-code-review`; Herdle does not require a harness-specific review
+command.
 
-1. **Standard review:** invoke the `requesting-code-review` skill and dispatch a
-   reviewer subagent to inspect the full branch diff against its base. Address
-   every valid finding and verify the resulting changes.
-2. **Deep review:** invoke `requesting-code-review` again and dispatch fresh
-   reviewer subagents with broader scrutiny of correctness, regressions,
-   maintainability, and requirement compliance. Address every valid finding and
-   re-run verification.
+Collect all valid Critical and Important findings before changing the branch,
+then address those **Critical and Important findings** as **one complete fixer
+batch**. Do not alternate between fixing and rereviewing one finding at a time.
+Rereview the final integration only after branch-changing fixes. If review
+requires no branch-changing fixes, record that rereview was not required. If a
+rereview finds Critical or Important issues, collect and fix them as another
+complete batch, then rereview **only after branch-changing fixes**.
 
-Do not reuse the standard review as the deep review, and do not substitute an
-informal self-review for either pass. Fresh reviewer context is part of the deep
-pass. Keep review tasks open until both the review and its resulting fixes are
-complete.
+Keep the Code Review task open until the review, required fixes, and any required
+rereview are complete.
 
 ### Finalize
 
-Create or update the validation document before advancing the ticket. It must
-contain this exact durable evidence section, with all four lines checked only
-after the corresponding work is complete:
+Create or update the validation document before advancing the ticket. Emit
+**exactly one of these mutually exclusive forms**, checking its lines only after
+the corresponding work is complete.
+
+When the final integration review required no branch-changing fixes:
 
 ```markdown
 ## Herdle code review
 
-- [x] Standard review completed
-- [x] Standard review findings addressed
-- [x] Deep review completed
-- [x] Deep review findings addressed
+- [x] Final integration review completed
+- [x] Final integration review findings addressed
+- [x] Final integration rereview not required
+```
+
+When branch-changing fixes were made and final integration rereview completed:
+
+```markdown
+## Herdle code review
+
+- [x] Final integration review completed
+- [x] Final integration review findings addressed
+- [x] Final integration rereview completed
+- [x] Final integration rereview findings addressed
 ```
 
 Then:
@@ -92,8 +105,8 @@ Then:
   covered. If it reports `fail` or `partial`, fix the defects and re-dispatch
   before checking the corresponding boxes;
 - leave human-only steps unchecked;
-- only after both review passes, fixes, and the four markers are on disk, set
-  `lifecycle: pending-validation`;
+- only after Code Review is complete and the matching durable evidence form is
+  on disk, set `lifecycle: pending-validation`;
 - do not set `lifecycle: validated` while any validation box remains open;
 - fix defects until automated validation passes, squash as required by the plan,
   and do not open a PR during Finalize.

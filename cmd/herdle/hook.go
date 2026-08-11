@@ -158,26 +158,13 @@ func runGatekeeper(r io.Reader, harness agent.Name, projectDir string) gate.Deci
 	switch t {
 	case gate.ToPendingValidation:
 		env.ValidationHint = validationHint(abs)
+		var docs []string
+		var found, allReadable bool
 		if pathReadable {
 			env.TicketContent, env.TicketReadOK = readTicket(abs)
+			docs, found, allReadable = readValidationDocs(abs)
 		}
-		if harness == agent.Polytoken {
-			var docs []string
-			var found, allReadable bool
-			if pathReadable {
-				docs, found, allReadable = readValidationDocs(abs)
-			}
-			env.ReviewEvidence = gate.PolytokenReviewEvidence(docs, found && allReadable)
-		} else {
-			var transcript io.Reader
-			if claudeRaw.TranscriptPath != "" {
-				if f, err := os.Open(claudeRaw.TranscriptPath); err == nil { // #nosec G304 -- path is supplied by Claude Code
-					defer func() { _ = f.Close() }()
-					transcript = f
-				}
-			}
-			env.ReviewEvidence = gate.ClaudeReviewEvidence(transcript, ticketPath)
-		}
+		env.ReviewEvidence = gate.DocumentReviewEvidence(docs, found && allReadable)
 	case gate.ToValidated:
 		env.ValidationHint = validationHint(abs)
 		if pathReadable {
@@ -230,10 +217,9 @@ func repoRootFromTicket(absTicket string) string {
 	return absTicket[:i]
 }
 
-// readValidationDocs locates the validation doc(s) for the ticket at absTicket and
-// returns their contents. The match is the tkid-glob herdle uses elsewhere:
-// <repoRoot>/docs/superpowers/validation/*<tkid>*. found reports whether any path
-// matched; allReadable is false when any matched path could not be read.
+// readValidationDocs locates exactly ticket-correlated validation documents in
+// the legacy validation directory and feature-directory layout. found reports
+// whether any path matched; allReadable is false when any match cannot be read.
 func validationHint(absTicket string) string {
 	root := repoRootFromTicket(absTicket)
 	if root == "" {
@@ -241,7 +227,7 @@ func validationHint(absTicket string) string {
 	}
 	tkid := strings.TrimSuffix(filepath.Base(absTicket), ".md")
 	legacy := filepath.Join(root, "docs", "superpowers", "validation", "*"+tkid+"*")
-	feature := filepath.Join(root, "docs", "superpowers", "*"+tkid+"*", "*validation*")
+	feature := filepath.Join(root, "docs", "superpowers", tkid+"-*", "*validation*")
 	return legacy + " or " + feature
 }
 
@@ -251,24 +237,41 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 		return nil, false, false
 	}
 	tkid := strings.TrimSuffix(filepath.Base(absTicket), ".md")
-	// Two layouts, unioned: the legacy validation/ subdir and the feature-dir
-	// layout (docs/superpowers/<tkid>-<slug>/*validation*).
-	legacy := filepath.Join(root, "docs", "superpowers", "validation", "*"+tkid+"*")
-	feature := filepath.Join(root, "docs", "superpowers", "*"+tkid+"*", "*validation*")
+	superpowers := filepath.Join(root, "docs", "superpowers")
 	var matches []string
-	for _, pattern := range []string{legacy, feature} {
-		m, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, false, false
+
+	legacyDir := filepath.Join(superpowers, "validation")
+	if entries, err := os.ReadDir(legacyDir); err == nil {
+		for _, entry := range entries {
+			stem := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+			if containsHyphenToken(stem, tkid) {
+				matches = append(matches, filepath.Join(legacyDir, entry.Name()))
+			}
 		}
-		matches = append(matches, m...)
 	}
+
+	if entries, err := os.ReadDir(superpowers); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), tkid+"-") {
+				continue
+			}
+			featureDir := filepath.Join(superpowers, entry.Name())
+			if files, err := os.ReadDir(featureDir); err == nil {
+				for _, file := range files {
+					if strings.Contains(file.Name(), "validation") {
+						matches = append(matches, filepath.Join(featureDir, file.Name()))
+					}
+				}
+			}
+		}
+	}
+
 	if len(matches) == 0 {
 		return nil, false, false
 	}
 	allReadable = true
-	for _, m := range matches {
-		data, err := os.ReadFile(m) // #nosec G304 -- repo-local validation doc
+	for _, match := range matches {
+		data, err := os.ReadFile(match) // #nosec G304 -- repo-local validation doc
 		if err != nil {
 			allReadable = false
 			continue
@@ -276,6 +279,24 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 		docs = append(docs, string(data))
 	}
 	return docs, true, allReadable
+}
+
+func containsHyphenToken(stem, ticketID string) bool {
+	for start := 0; start <= len(stem)-len(ticketID); {
+		i := strings.Index(stem[start:], ticketID)
+		if i < 0 {
+			return false
+		}
+		i += start
+		before := i == 0 || stem[i-1] == '-'
+		afterIndex := i + len(ticketID)
+		after := afterIndex == len(stem) || stem[afterIndex] == '-'
+		if before && after {
+			return true
+		}
+		start = i + 1
+	}
+	return false
 }
 
 func firstNonEmpty(a, b string) string {

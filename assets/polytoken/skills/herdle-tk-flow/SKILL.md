@@ -82,9 +82,10 @@ not the place to learn the rule.
 
 - **→ in-development** — set `branch:` (or `external-ref`) on the ticket *first*,
   so the dashboard can correlate it.
-- **→ pending-validation** — complete standard and deep review passes with the
-  `requesting-code-review` skill and reviewer subagents, address their findings,
-  then record the four durable review markers in the validation document.
+- **→ pending-validation** — after task approvals, complete **one fresh final
+  integration review**. Collect all **Critical and Important findings**, address
+  them as **one complete fixer batch**, and rereview **only after branch-changing
+  fixes**. Record exactly one matching durable marker form in the validation doc.
 - **→ validated** — the ticket must already be at `pending-validation` (never jump
   straight from in-development), **and** every `- [ ]` in its validation doc must
   be checked. Automated steps you ran get checked off by you; human-only steps stay

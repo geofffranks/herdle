@@ -162,7 +162,18 @@ where you run it. It reports missing, stale, partial, or malformed installs;
 global-plus-project and ancestor-plus-descendant conflicts; and recognizable
 unregistered artifacts in the current directory. See
 [Diagnostics](usage.md#diagnostics) for the allowed layouts, crawl limitation,
-and remediation commands. Any required dependency, scope, or integrity failure
+and remediation commands.
+
+Doctor also verifies the exact installed compatibility assets and lifecycle
+gatekeeper command for each selected harness. A healthy skills row means the
+installed workflow generates the current final-integration evidence forms; it
+does not mean legacy project evidence was rewritten or needs migration. A
+healthy gatekeeper row means lifecycle edits are routed to the installed
+compatibility gate. A missing row points to `herdle init` with the same
+`--agent` selection; stale standalone content points to the same command with
+`--force`; malformed shared files must be repaired before rerunning init. After
+a repair or refresh, reload Claude Code and start a new Polytoken session (or
+restart its client). Any required dependency, scope, or integrity failure
 produces a non-zero exit, making doctor useful in scripts and CI.
 
 ---

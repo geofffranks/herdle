@@ -348,11 +348,14 @@ herdle hook gatekeeper
 Reads a PreToolUse hook JSON payload from stdin and enforces herdle lifecycle
 transitions. It gates three transitions:
 
-- **`lifecycle: pending-validation`** — complete a standard review first and a
-  fresh deep review second, address each pass's findings, then record all four
-  durable review markers in the validation document. Claude transcripts use the
-  equivalent `medium` then `high` `/code-review` evidence. Override:
-  `[skip-code-review-gate] <reason>`.
+- **`lifecycle: pending-validation`** — for a forward transition, record one
+  complete supported review contract in a ticket-correlated validation document.
+  New documents contain one final integration review plus either `rereview not
+  required` or completed incremental-rereview evidence; existing legacy
+  Standard/Deep evidence remains compatible. A rollback from `validated` or an
+  idempotent rewrite at `pending-validation` does not require renewed evidence.
+  Exceptional forward transitions can use the reason-bearing
+  `[skip-code-review-gate] <reason>` override.
 - **`lifecycle: validated`** — the ticket must already be at `pending-validation`
   (monotonic), a validation doc must exist under
   `docs/superpowers/validation/*<tkid>*`, and every checkbox in it must be

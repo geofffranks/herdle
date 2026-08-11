@@ -13,6 +13,7 @@ import (
 	"github.com/geofffranks/herdle/assets"
 	"github.com/geofffranks/herdle/internal/agent"
 	"github.com/geofffranks/herdle/internal/config"
+	internaldoctor "github.com/geofffranks/herdle/internal/doctor"
 	"github.com/geofffranks/herdle/internal/initcmd"
 )
 
@@ -102,6 +103,31 @@ var _ = Describe("herdle doctor", func() {
 		projectRow := "polytoken: project " + project + ": skills + context"
 		Expect(out).To(ContainSubstring(projectRow))
 		Expect(strings.Index(out, projectRow)).To(BeNumerically("<", strings.Index(out, "claude: skills + rule")))
+	})
+
+	It("checks the installed compatibility assets and gatekeeper", func() {
+		Expect(app.Run([]string{"herdle", "init", "--agent", "claude", "--agent", "polytoken"})).To(Succeed())
+		env, err := buildDoctorEnv([]agent.Name{agent.Claude, agent.Polytoken})
+		Expect(err).NotTo(HaveOccurred())
+
+		results := internaldoctor.Run(env)
+		for _, name := range []string{
+			"claude: skills + rule",
+			"claude: lifecycle gatekeeper",
+			"polytoken: skills + context",
+			"polytoken: AGENTS.md link",
+			"polytoken: lifecycle gatekeeper",
+		} {
+			var found *internaldoctor.Result
+			for i := range results {
+				if results[i].Name == name {
+					found = &results[i]
+					break
+				}
+			}
+			Expect(found).NotTo(BeNil(), "missing doctor result %q", name)
+			Expect(found.Status).To(Equal(internaldoctor.OK), "doctor result %q: %s", name, found.Detail)
+		}
 	})
 
 	It("renders only Polytoken harness rows when selected", func() {

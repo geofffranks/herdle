@@ -61,31 +61,32 @@ The Unix steps above also work as-is under Git Bash or WSL.
 
 ## `herdle init`
 
-Run once after download (and after each upgrade), selecting one or both agent
+Run once after download and after each upgrade. Select one or both agent
 harnesses:
 
 ```sh
 herdle init                                   # Claude-compatible default
 herdle init --agent claude                    # explicit Claude-only setup
-herdle init --agent polytoken                 # Polytoken-only setup
-herdle init --agent claude --agent polytoken  # both; --agent is repeatable
+herdle init --agent polytoken                 # global Polytoken setup
+herdle init --agent claude --agent polytoken  # both globally; --agent is repeatable
 ```
 
-Repeated names are deduplicated, and selected harnesses are installed in the
-order supplied. Bare `herdle init` is intentionally equivalent to
-`--agent claude` for backward compatibility. Selection is global only:
-`--agent polytoken` writes the user's Polytoken configuration and does not offer
-or create a project-local installation.
+Bare `herdle init` remains equivalent to `--agent claude`. For compatibility,
+`--scope` defaults to `global`, so existing Claude, Polytoken, and dual-agent
+commands keep their behavior. Repeated agent names are deduplicated, and selected
+harnesses are installed in the order supplied.
 
-`herdle init` is idempotent — safe to run multiple times. Claude setup writes:
+### Global layout
+
+Claude setup writes:
 
 - `~/.claude/skills/herdle-tk-flow/SKILL.md`
 - `~/.claude/skills/herdle-tk-artifacts/SKILL.md`
 - `~/.claude/rules/herdle.md`
 - a managed lifecycle hook in `~/.claude/settings.json`
 
-Polytoken setup uses `${XDG_CONFIG_HOME:-$HOME/.config}/polytoken` (called
-`$POLYTOKEN_CONFIG` below) and writes or merges:
+Global Polytoken setup uses `${XDG_CONFIG_HOME:-$HOME/.config}/polytoken`
+(called `$POLYTOKEN_CONFIG` below) and writes or merges:
 
 - `$POLYTOKEN_CONFIG/skills/herdle-tk-flow/SKILL.md`
 - `$POLYTOKEN_CONFIG/skills/herdle-tk-artifacts/SKILL.md`
@@ -94,21 +95,47 @@ Polytoken setup uses `${XDG_CONFIG_HOME:-$HOME/.config}/polytoken` (called
 - one `<!-- herdle:begin -->` … `<!-- herdle:end -->` block in
   `$POLYTOKEN_CONFIG/AGENTS.md` that includes `@herdle.md`
 
-The two skills and `herdle.md` are Herdle-owned standalone files. `hooks.json`
-and `AGENTS.md` are shared, user-owned files: Herdle updates only its named hook
-and marked block and preserves all unrelated entries and bytes. The Polytoken
-hook intentionally uses the broad `pre_tool_use` matcher `*`; the gatekeeper
-inspects each operation and acts only on relevant lifecycle edits.
+### Project Polytoken layout
 
-After every selected harness succeeds, init seeds
+Run project setup from the exact directory where Polytoken should load Herdle:
+
+```sh
+cd /path/to/project
+herdle init --agent polytoken --scope project
+```
+
+Project scope requires explicit exclusive `--agent polytoken`. It cannot be
+combined with Claude or an omitted `--agent`. Herdle resolves and records the
+canonical physical current working directory; it does not move up to the Git
+root, and the directory does not need to be a Git repository.
+
+The command writes or merges:
+
+- `.polytoken/skills/herdle-tk-flow/SKILL.md`
+- `.polytoken/skills/herdle-tk-artifacts/SKILL.md`
+- `.polytoken/herdle.md`
+- one named `herdle-gatekeeper` entry in `.polytoken/hooks.json`
+- one marked block in root `AGENTS.md` that includes `@.polytoken/herdle.md`
+
+A successful project install records the canonical path with `polytoken = true`
+in Herdle config. Project install does not seed first-use global config or run
+legacy project migration; its project registration is the config update.
+
+Both scopes are idempotent. Existing standalone files are left untouched unless
+`--force` is passed. The two skills and `herdle.md` are Herdle-owned standalone
+files. `hooks.json` and `AGENTS.md` are shared, user-owned files: Herdle updates
+only its named hook and marked block and preserves unrelated content and file
+modes. The Polytoken hook uses the broad `pre_tool_use` matcher `*`; the
+gatekeeper acts only on relevant lifecycle edits.
+
+After every selected global harness succeeds, init seeds
 `${XDG_CONFIG_HOME:-$HOME/.config}/herdle/config.toml` once on first run and
 migrates `~/.config/wip/projects` if present. A failed multi-harness install does
-not seed config. Existing standalone files are left untouched unless `--force`
-is passed.
+not seed config.
 
 Reload the harness after install or upgrade: use `/reload` in Claude Code, and
 start a new Polytoken session (or restart the current Polytoken client) so its
-global skills, `AGENTS.md` context, and hooks are reread.
+skills, `AGENTS.md` context, and hooks are reread.
 
 ---
 
@@ -129,12 +156,14 @@ Common dependency/config rows are rendered once. Claude adds `superpowers`,
 - `polytoken: AGENTS.md link`
 - `polytoken: lifecycle gatekeeper`
 
-Doctor verifies the exact installed content, managed context markers, and hook
-command. A missing row points to `herdle init --agent polytoken`; stale standalone
-content points to `herdle init --agent polytoken --force`; malformed shared files
-must be repaired before rerunning init. `herdle doctor` exits non-zero if any
-required dependency is missing or configuration is incomplete, making it useful
-in scripts and CI.
+Doctor verifies exact installed content, managed context markers, and hooks. A
+Polytoken run checks global state and every registered project regardless of
+where you run it. It reports missing, stale, partial, or malformed installs;
+global-plus-project and ancestor-plus-descendant conflicts; and recognizable
+unregistered artifacts in the current directory. See
+[Diagnostics](usage.md#diagnostics) for the allowed layouts, crawl limitation,
+and remediation commands. Any required dependency, scope, or integrity failure
+produces a non-zero exit, making doctor useful in scripts and CI.
 
 ---
 
@@ -145,29 +174,52 @@ in scripts and CI.
 2. Refresh each installed harness:
 
 ```sh
-herdle init --force                                   # Claude default
-herdle init --agent polytoken --force                 # Polytoken only
-herdle init --agent claude --agent polytoken --force  # both
+herdle init --force                                                   # Claude default
+herdle init --agent polytoken --scope global --force                 # global Polytoken
+herdle init --agent claude --agent polytoken --force                 # both globally
+cd /path/to/project && herdle init --agent polytoken --scope project --force
 ```
 
+Run the project command once in each registered project you want to refresh.
 `--force` overwrites Herdle-owned standalone skill/rule/context files with the
 versions embedded in the new binary. Managed shared-file entries are refreshed
-surgically. Herdle config (`${XDG_CONFIG_HOME:-$HOME/.config}/herdle`) and unrelated
-harness content are not affected. Reload/restart each selected harness afterward.
+surgically. Unrelated harness content is not affected. Reload/restart each
+selected harness afterward.
 
 ---
 
 ## Uninstall
 
 ```sh
-herdle init --uninstall                                   # Claude default
-herdle init --agent polytoken --uninstall                 # Polytoken only
-herdle init --agent claude --agent polytoken --uninstall  # both
+herdle init --uninstall                                                   # Claude default
+herdle init --agent polytoken --scope global --uninstall                 # global Polytoken
+herdle init --agent claude --agent polytoken --uninstall                 # both globally
+cd /path/to/project && herdle init --agent polytoken --scope project --uninstall
 ```
 
 Claude uninstall removes Herdle's skills/rule and lifecycle hook, never edits
 `CLAUDE.md`, and leaves Herdle config in place. Polytoken uninstall removes the
 two Herdle skill files and `herdle.md`, removes only the named hook from
-`hooks.json`, and removes only the marked block from `AGENTS.md`; the shared
-files and unrelated user content remain. Uninstall never reseeds or deletes
-`${XDG_CONFIG_HOME:-$HOME/.config}/herdle`.
+`hooks.json`, and removes only the marked block from `AGENTS.md`; shared files
+and unrelated user content remain.
+
+A registered project uninstall also clears `polytoken = true`. It preserves the
+project entry when other metadata remains and removes an otherwise empty entry.
+An unregistered or repeated project uninstall still removes recognizable
+Herdle-owned artifacts, but it does not create or rewrite Herdle config when no
+matching entry exists. Uninstall never reseeds or deletes global Herdle config.
+
+### Move from global to project scope
+
+Remove the global installation before adding a project installation so doctor
+does not report both scopes as a conflict:
+
+```sh
+herdle init --agent polytoken --scope global --uninstall
+cd /path/to/project
+herdle init --agent polytoken --scope project
+```
+
+Repeat the project install command in other non-overlapping projects as needed.
+Start a new Polytoken session or restart the current client after changing either
+scope.

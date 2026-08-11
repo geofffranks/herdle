@@ -71,7 +71,7 @@ func buildDoctorEnv(selected []agent.Name) (doctor.Env, error) {
 		return doctor.Env{}, err
 	}
 	herdleOnPath, _ := exec.LookPath("herdle") // "" when not found — not an error here
-	return doctor.Env{
+	env := doctor.Env{
 		Git:                vcs.NewGitRunner(),
 		GH:                 vcs.NewGHRunner(),
 		GL:                 vcs.NewGLRunner(),
@@ -88,5 +88,20 @@ func buildDoctorEnv(selected []agent.Name) (doctor.Env, error) {
 		ExecPath:           exe,
 		HerdleOnPath:       herdleOnPath,
 		PathDirs:           filepath.SplitList(os.Getenv("PATH")),
-	}, nil
+	}
+	// CWD is only needed for Polytoken's current-project drift check; resolve it
+	// best-effort so an unresolvable cwd never aborts all doctor checks.
+	for _, s := range selected {
+		if s == agent.Polytoken {
+			if raw, wdErr := os.Getwd(); wdErr == nil {
+				if canonical, cerr := config.CanonicalProjectPath(raw); cerr == nil {
+					env.CWD = canonical
+				} else {
+					env.CWD = raw // doctor reports the identity issue as a diagnostic
+				}
+			}
+			break
+		}
+	}
+	return env, nil
 }

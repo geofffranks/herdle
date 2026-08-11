@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/urfave/cli/v2"
 
@@ -13,25 +15,119 @@ import (
 	"github.com/geofffranks/herdle/internal/vcs"
 )
 
+type initDependencies struct {
+	getwd                func() (string, error)
+	canonicalProjectPath func(string) (string, error)
+	loadConfig           func() (*config.Config, error)
+	saveConfig           func(*config.Config) error
+}
+
+func defaultInitDependencies() initDependencies {
+	return initDependencies{
+		getwd:                os.Getwd,
+		canonicalProjectPath: config.CanonicalProjectPath,
+		loadConfig:           config.Load,
+		saveConfig:           func(cfg *config.Config) error { return cfg.Save() },
+	}
+}
+
 // initCommand builds the `herdle init` command.
 func initCommand() *cli.Command {
+	return initCommandWithDependencies(defaultInitDependencies())
+}
+
+func initCommandWithDependencies(deps initDependencies) *cli.Command {
 	return &cli.Command{
 		Name:  "init",
 		Usage: "write embedded skills and rules, and seed config",
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{Name: "agent", Usage: "agent harness to configure: claude or polytoken (repeatable)"},
+			&cli.StringFlag{Name: "scope", Value: "global", Usage: "installation scope: global or project"},
 			&cli.BoolFlag{Name: "force", Usage: "overwrite existing skills/rules (use after an upgrade)"},
 			&cli.BoolFlag{Name: "uninstall", Usage: "remove the skills/rules herdle installed"},
 		},
-		Action: initAction,
+		Action: func(c *cli.Context) error { return initAction(c, deps) },
 	}
 }
 
-func initAction(c *cli.Context) error {
+func initAction(c *cli.Context, deps initDependencies) error {
 	selected, err := agent.Parse(c.StringSlice("agent"))
 	if err != nil {
 		return err
 	}
+
+	scope := c.String("scope")
+	if scope != "global" && scope != "project" {
+		return fmt.Errorf("unknown scope %q (expected global or project)", scope)
+	}
+	if scope == "project" {
+		explicitAgents := c.StringSlice("agent")
+		if len(explicitAgents) == 0 || len(selected) != 1 || selected[0] != agent.Polytoken {
+			return errors.New("project scope requires explicit exclusive --agent polytoken")
+		}
+		cwd, err := deps.getwd()
+		if err != nil {
+			return err
+		}
+		project, err := deps.canonicalProjectPath(cwd)
+		if err != nil {
+			return err
+		}
+		return initProjectAction(c, project, deps)
+	}
+
+	return initGlobalAction(c, selected)
+}
+
+func initProjectAction(c *cli.Context, project string, deps initDependencies) error {
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		return err
+	}
+	standalone := filepath.Join(project, ".polytoken")
+	layout := initcmd.PolytokenLayout{
+		StandaloneDir:  standalone,
+		HooksPath:      filepath.Join(standalone, "hooks.json"),
+		ContextPath:    filepath.Join(project, "AGENTS.md"),
+		ContextInclude: "@.polytoken/herdle.md",
+	}
+	var results []initcmd.Result
+	if c.Bool("uninstall") {
+		results, err = initcmd.UninstallPolytokenLayout(assets.PolytokenFS, layout)
+	} else {
+		results, err = initcmd.InstallPolytokenLayout(assets.PolytokenFS, layout, initcmd.PolytokenGatekeeperCommand(), c.Bool("force"))
+	}
+	for _, result := range results {
+		fmt.Fprintf(c.App.Writer, "%s: %s %s\n", agent.Polytoken, result.Action, result.Path)
+	}
+	if err != nil {
+		return err
+	}
+	return saveProjectConfig(cfg, project, c.Bool("uninstall"), deps)
+}
+
+func updateProjectConfig(path string, uninstall bool, deps initDependencies) error {
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		return err
+	}
+	return saveProjectConfig(cfg, path, uninstall, deps)
+}
+
+func saveProjectConfig(cfg *config.Config, path string, uninstall bool, deps initDependencies) error {
+	var changed bool
+	if uninstall {
+		changed = cfg.ClearProjectPolytoken(path)
+	} else {
+		changed = cfg.UpsertProjectPolytoken(path)
+	}
+	if !changed {
+		return nil
+	}
+	return deps.saveConfig(cfg)
+}
+
+func initGlobalAction(c *cli.Context, selected []agent.Name) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err

@@ -12,11 +12,19 @@ import (
 )
 
 const (
-	polytokenHookName = "herdle-gatekeeper" // #nosec G101 -- hook name, not a credential
-	contextBlock      = "<!-- herdle:begin -->\n@herdle.md\n<!-- herdle:end -->\n"
-	contextBegin      = "<!-- herdle:begin -->"
-	contextEnd        = "<!-- herdle:end -->"
+	polytokenHookName    = "herdle-gatekeeper" // #nosec G101 -- hook name, not a credential
+	globalContextInclude = "@herdle.md"
+	contextBegin         = "<!-- herdle:begin -->"
+	contextEnd           = "<!-- herdle:end -->"
 )
+
+// PolytokenLayout identifies the locations owned by one Polytoken installation.
+type PolytokenLayout struct {
+	StandaloneDir  string
+	HooksPath      string
+	ContextPath    string
+	ContextInclude string
+}
 
 type polytokenHook struct {
 	Name    string `json:"name"`
@@ -63,16 +71,28 @@ func isPolytokenStandalone(path string) bool {
 		path == "skills/herdle-tk-artifacts/SKILL.md"
 }
 
-// InstallPolytoken installs standalone Polytoken assets and surgically merges
-// Herdle's gatekeeper hook and AGENTS.md context block.
+// InstallPolytoken installs the stable global Polytoken layout.
 func InstallPolytoken(src fs.FS, dir, command string, force bool) ([]Result, error) {
-	results, err := installSelected(src, dir, force, isPolytokenStandalone)
+	return InstallPolytokenLayout(src, PolytokenLayout{
+		StandaloneDir:  dir,
+		HooksPath:      filepath.Join(dir, "hooks.json"),
+		ContextPath:    filepath.Join(dir, "AGENTS.md"),
+		ContextInclude: globalContextInclude,
+	}, command, force)
+}
+
+// InstallPolytokenLayout installs standalone assets and surgically merges shared
+// hook and context files at the supplied ownership locations.
+func InstallPolytokenLayout(src fs.FS, layout PolytokenLayout, command string, force bool) ([]Result, error) {
+	results, err := installSelected(src, layout.StandaloneDir, force, isPolytokenStandalone)
 	if err != nil {
 		return results, err
 	}
 	for _, merge := range []func() (Result, error){
-		func() (Result, error) { return mergePolytokenHooks(filepath.Join(dir, "hooks.json"), command) },
-		func() (Result, error) { return mergeAgentContext(filepath.Join(dir, "AGENTS.md")) },
+		func() (Result, error) { return mergePolytokenHooks(layout.HooksPath, command) },
+		func() (Result, error) {
+			return mergeAgentContext(layout.ContextPath, contextBlock(layout.ContextInclude))
+		},
 	} {
 		result, mergeErr := merge()
 		if mergeErr != nil {
@@ -83,12 +103,24 @@ func InstallPolytoken(src fs.FS, dir, command string, force bool) ([]Result, err
 	return results, nil
 }
 
-// UninstallPolytoken removes standalone assets and only Herdle-owned shared content.
+// UninstallPolytoken removes the stable global Polytoken layout.
 func UninstallPolytoken(src fs.FS, dir string) ([]Result, error) {
+	return UninstallPolytokenLayout(src, PolytokenLayout{
+		StandaloneDir:  dir,
+		HooksPath:      filepath.Join(dir, "hooks.json"),
+		ContextPath:    filepath.Join(dir, "AGENTS.md"),
+		ContextInclude: globalContextInclude,
+	})
+}
+
+// UninstallPolytokenLayout removes standalone assets and only Herdle-owned shared content.
+func UninstallPolytokenLayout(src fs.FS, layout PolytokenLayout) ([]Result, error) {
 	var results []Result
 	for _, unmerge := range []func() (Result, error){
-		func() (Result, error) { return unmergePolytokenHooks(filepath.Join(dir, "hooks.json")) },
-		func() (Result, error) { return unmergeAgentContext(filepath.Join(dir, "AGENTS.md")) },
+		func() (Result, error) { return unmergePolytokenHooks(layout.HooksPath) },
+		func() (Result, error) {
+			return unmergeAgentContext(layout.ContextPath, contextBlock(layout.ContextInclude))
+		},
 	} {
 		result, err := unmerge()
 		if err != nil {
@@ -98,8 +130,26 @@ func UninstallPolytoken(src fs.FS, dir string) ([]Result, error) {
 			results = append(results, result)
 		}
 	}
-	standalone, err := uninstallSelected(src, dir, isPolytokenStandalone)
+	standalone, err := uninstallSelected(src, layout.StandaloneDir, isPolytokenStandalone)
 	return append(results, standalone...), err
+}
+
+func contextBlock(include string) string {
+	return contextBegin + "\n" + include + "\n" + contextEnd + "\n"
+}
+
+// HasPolytokenHookSignature reports whether hooks.json contains the Herdle-owned
+// hook name, including malformed partial state that inspection must diagnose.
+func HasPolytokenHookSignature(path string) bool {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller explicitly supplies diagnostic path
+	return err == nil && bytes.Contains(data, []byte(polytokenHookName))
+}
+
+// HasAgentContextSignature reports whether AGENTS.md contains either Herdle-owned
+// context marker, including malformed partial state that inspection must diagnose.
+func HasAgentContextSignature(path string) bool {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller explicitly supplies diagnostic path
+	return err == nil && (bytes.Contains(data, []byte(contextBegin)) || bytes.Contains(data, []byte(contextEnd)))
 }
 
 // InspectPolytokenHooks reads and validates hooks.json without changing it.
@@ -114,9 +164,15 @@ func InspectPolytokenHooks(path string) (PolytokenHookInspection, error) {
 	return PolytokenHookInspection{Count: 1, Event: parsed.hook.Event, Matcher: parsed.hook.Matcher, Command: parsed.hook.Handler.Bash}, nil
 }
 
-// InspectAgentContext reads and validates AGENTS.md without changing it.
+// InspectAgentContext reads and validates global AGENTS.md context without changing it.
 func InspectAgentContext(path string) (AgentContextInspection, error) {
-	parsed, _, err := parseAgentContext(path)
+	return InspectAgentContextInclude(path, globalContextInclude)
+}
+
+// InspectAgentContextInclude reads and validates an AGENTS.md managed block for
+// the supplied scope-specific include without changing it.
+func InspectAgentContextInclude(path, include string) (AgentContextInspection, error) {
+	parsed, _, err := parseAgentContext(path, contextBlock(include))
 	if err != nil {
 		return AgentContextInspection{}, err
 	}
@@ -238,8 +294,8 @@ func parsePolytokenHooks(path string) (parsedHooks, os.FileMode, error) {
 	return parsed, mode, nil
 }
 
-func mergeAgentContext(path string) (Result, error) {
-	parsed, mode, err := parseAgentContext(path)
+func mergeAgentContext(path, expectedBlock string) (Result, error) {
+	parsed, mode, err := parseAgentContext(path, expectedBlock)
 	if err != nil {
 		return Result{}, err
 	}
@@ -257,13 +313,13 @@ func mergeAgentContext(path string) (Result, error) {
 	}
 	var data []byte
 	if parsed.count == 1 {
-		data = append(append(append([]byte{}, parsed.data[:parsed.begin]...), contextBlock...), parsed.data[parsed.end:]...)
+		data = append(append(append([]byte{}, parsed.data[:parsed.begin]...), expectedBlock...), parsed.data[parsed.end:]...)
 	} else if len(parsed.data) == 0 {
-		data = []byte(contextBlock)
+		data = []byte(expectedBlock)
 	} else {
 		// A new managed block is always preceded by one installation-owned newline.
 		// Existing bytes, including any trailing newline, remain untouched.
-		data = append(append(append([]byte{}, parsed.data...), '\n'), contextBlock...)
+		data = append(append(append([]byte{}, parsed.data...), '\n'), expectedBlock...)
 	}
 	if !parsed.exists {
 		mode = 0o644
@@ -274,8 +330,8 @@ func mergeAgentContext(path string) (Result, error) {
 	return Result{Path: path, Action: action}, nil
 }
 
-func unmergeAgentContext(path string) (Result, error) {
-	parsed, mode, err := parseAgentContext(path)
+func unmergeAgentContext(path, expectedBlock string) (Result, error) {
+	parsed, mode, err := parseAgentContext(path, expectedBlock)
 	if err != nil {
 		return Result{}, err
 	}
@@ -289,7 +345,7 @@ func unmergeAgentContext(path string) (Result, error) {
 	return Result{Path: path, Action: Removed}, nil
 }
 
-func parseAgentContext(path string) (parsedContext, os.FileMode, error) {
+func parseAgentContext(path, expectedBlock string) (parsedContext, os.FileMode, error) {
 	var parsed parsedContext
 	data, mode, exists, err := readShared(path)
 	if err != nil {
@@ -315,9 +371,9 @@ func parseAgentContext(path string) (parsedContext, os.FileMode, error) {
 		return parsed, mode, fmt.Errorf("%s: reversed herdle context markers", path)
 	}
 	end := endMarker + len(contextEnd)
-	// Consume the newline that always trails the managed block (it is part of
-	// contextBlock). Handle both LF and CRLF so a Windows-encoded AGENTS.md
-	// captures the same logical bytes as the LF-only contextBlock constant.
+	// Consume the newline that always trails the managed block. Handle both LF
+	// and CRLF so a Windows-encoded AGENTS.md captures the same logical bytes as
+	// the LF-only expected block.
 	if end+1 < len(data) && data[end] == '\r' && data[end+1] == '\n' {
 		end += 2
 	} else if end < len(data) && data[end] == '\n' {
@@ -326,11 +382,10 @@ func parseAgentContext(path string) (parsedContext, os.FileMode, error) {
 	parsed.count = 1
 	parsed.begin = begin
 	parsed.end = end
-	// contextBlock uses LF; a CRLF-encoded AGENTS.md (common on Windows or after
-	// editor re-saving) captures \r\n sequences, which would fail the exact byte
-	// comparison and make doctor false-positive "malformed". Normalize CR away
-	// before comparing so only the logical block text is checked.
-	parsed.exact = strings.ReplaceAll(string(data[begin:end]), "\r", "") == contextBlock
+	// The expected block uses LF; a CRLF-encoded AGENTS.md (common on Windows or
+	// after editor re-saving) captures \r\n sequences. Normalize CR away before
+	// comparing so only the logical block text is checked.
+	parsed.exact = strings.ReplaceAll(string(data[begin:end]), "\r", "") == expectedBlock
 	return parsed, mode, nil
 }
 

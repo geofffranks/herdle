@@ -346,4 +346,44 @@ var _ = Describe("Polytoken", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(results).To(BeEmpty())
 	})
+
+	It("installs and uninstalls a project layout with the project context include", func() {
+		project := GinkgoT().TempDir()
+		standalone := filepath.Join(project, ".polytoken")
+		hooksPath := filepath.Join(standalone, "hooks.json")
+		agentsPath := filepath.Join(project, "AGENTS.md")
+		docPath := filepath.Join(standalone, "herdle.md")
+		layout := initcmd.PolytokenLayout{
+			StandaloneDir:  standalone,
+			HooksPath:      hooksPath,
+			ContextPath:    agentsPath,
+			ContextInclude: "@.polytoken/herdle.md",
+		}
+		foreignMarkdown := "# Project notes\n"
+		Expect(os.WriteFile(agentsPath, []byte(foreignMarkdown), 0o640)).To(Succeed())
+		Expect(os.MkdirAll(standalone, 0o750)).To(Succeed())
+		Expect(os.WriteFile(hooksPath, []byte(`[{"name":"foreign","event":"session_start"}]`), 0o600)).To(Succeed())
+		Expect(os.WriteFile(docPath, []byte("stale"), 0o600)).To(Succeed())
+
+		results, err := initcmd.InstallPolytokenLayout(polytokenFS(), layout, gatekeeperCommand, true)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(filepath.Join(standalone, "skills", "herdle-tk-flow", "SKILL.md")).To(BeAnExistingFile())
+		Expect(readFile(docPath)).To(Equal("context"))
+		Expect(fileMode(docPath)).To(Equal(os.FileMode(0o600)))
+		Expect(readFile(agentsPath)).To(Equal(foreignMarkdown + "\n<!-- herdle:begin -->\n@.polytoken/herdle.md\n<!-- herdle:end -->\n"))
+		Expect(readHooks(hooksPath)).To(HaveLen(2))
+		Expect(results).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Merged}))
+
+		repeated, err := initcmd.InstallPolytokenLayout(polytokenFS(), layout, gatekeeperCommand, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(repeated).To(ContainElement(initcmd.Result{Path: agentsPath, Action: initcmd.Skipped}))
+		Expect(readHooks(hooksPath)).To(HaveLen(2))
+
+		_, err = initcmd.UninstallPolytokenLayout(polytokenFS(), layout)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(filepath.Join(standalone, "skills", "herdle-tk-flow", "SKILL.md")).NotTo(BeAnExistingFile())
+		Expect(docPath).NotTo(BeAnExistingFile())
+		Expect(readFile(agentsPath)).To(Equal(foreignMarkdown + "\n"))
+		Expect(readHooks(hooksPath)).To(Equal([]map[string]any{{"name": "foreign", "event": "session_start"}}))
+	})
 })

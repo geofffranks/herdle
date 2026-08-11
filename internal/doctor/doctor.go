@@ -45,6 +45,7 @@ type Env struct {
 	PolytokenDir       string
 	PolytokenHooksPath string
 	PolytokenCommand   string
+	CWD                string
 	ConfigPath         string
 	SettingsPath       string
 	ExecPath           string

@@ -132,13 +132,15 @@ for commands actually run; leave human-only boxes open and do not move to
 ## The installed skills are authoritative
 
 Bare `herdle init` is the Claude-compatible default; repeat `--agent` to install
-both harnesses. `herdle init --agent polytoken` installs globally only—there is
-no project-local mode. For Claude Code, the two skills live under
-`~/.claude/skills/` with a rules stub at `~/.claude/rules/herdle.md`. For
-Polytoken, they live under
-`${XDG_CONFIG_HOME:-$HOME/.config}/polytoken/skills/` with a context file at
-`herdle.md` linked from a marked block in `AGENTS.md`. Reload Claude with
-`/reload`; start a new Polytoken session or restart its client after changes.
+both harnesses globally. `herdle init --agent polytoken` also defaults to global
+scope. Run `herdle init --agent polytoken --scope project` for the exact current
+directory instead. For Claude Code, the two skills live under
+`~/.claude/skills/` with a rules stub at `~/.claude/rules/herdle.md`. Global
+Polytoken skills live under
+`${XDG_CONFIG_HOME:-$HOME/.config}/polytoken/skills/`; project skills live under
+`.polytoken/skills/`. Each scope links its `herdle.md` context from a marked
+block in the applicable `AGENTS.md`. Reload Claude with `/reload`; start a new
+Polytoken session or restart its client after changes.
 Both harnesses install the same two skills with harness-native wording:
 
 - **`herdle-tk-flow`** — the lifecycle, correlation, and dashboard-reading

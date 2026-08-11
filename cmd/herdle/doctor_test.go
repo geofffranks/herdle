@@ -12,6 +12,7 @@ import (
 
 	"github.com/geofffranks/herdle/assets"
 	"github.com/geofffranks/herdle/internal/agent"
+	"github.com/geofffranks/herdle/internal/config"
 	"github.com/geofffranks/herdle/internal/initcmd"
 )
 
@@ -67,6 +68,40 @@ var _ = Describe("herdle doctor", func() {
 		Expect(env.PolytokenDir).To(Equal(filepath.Join(xdg, "polytoken")))
 		Expect(env.PolytokenHooksPath).To(Equal(filepath.Join(xdg, "polytoken", "hooks.json")))
 		Expect(env.PolytokenCommand).To(Equal(initcmd.PolytokenGatekeeperCommand()))
+	})
+
+	It("injects the canonical current cwd", func() {
+		project := GinkgoT().TempDir()
+		alias := filepath.Join(GinkgoT().TempDir(), "alias")
+		Expect(os.Symlink(project, alias)).To(Succeed())
+		previous, err := os.Getwd()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(os.Chdir(alias)).To(Succeed())
+		DeferCleanup(func() { Expect(os.Chdir(previous)).To(Succeed()) })
+
+		env, err := buildDoctorEnv([]agent.Name{agent.Polytoken})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(env.CWD).To(Equal(project))
+	})
+
+	It("does not resolve cwd for Claude-only doctor", func() {
+		env, err := buildDoctorEnv([]agent.Name{agent.Claude})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(env.CWD).To(BeEmpty())
+	})
+
+	It("returns strict failure for a drifted registered project", func() {
+		project := filepath.Join(home, "registered")
+		cfgPath := filepath.Join(home, "config.toml")
+		GinkgoT().Setenv("HERDLE_CONFIG", cfgPath)
+		Expect((&config.Config{Projects: []config.Project{{Path: project, Polytoken: true}}}).SaveTo(cfgPath)).To(Succeed())
+
+		err := app.Run([]string{"herdle", "doctor", "--agent", "polytoken", "--agent", "claude"})
+		Expect(err).To(HaveOccurred())
+		out := buf.String()
+		projectRow := "polytoken: project " + project + ": skills + context"
+		Expect(out).To(ContainSubstring(projectRow))
+		Expect(strings.Index(out, projectRow)).To(BeNumerically("<", strings.Index(out, "claude: skills + rule")))
 	})
 
 	It("renders only Polytoken harness rows when selected", func() {

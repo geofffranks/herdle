@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -60,5 +62,66 @@ var _ = Describe("config CRUD", func() {
 		}}
 		c.Remove(1)
 		Expect(c.Projects).To(Equal([]config.Project{{Path: "/a"}, {Path: "/c"}}))
+	})
+
+	It("upserts project Polytoken state by exact canonical path", func() {
+		c := &config.Config{Projects: []config.Project{{Path: "/work/app", Slug: "owner/app"}}}
+		Expect(c.UpsertProjectPolytoken("/work/app")).To(BeTrue())
+		Expect(c.Projects).To(Equal([]config.Project{{Path: "/work/app", Slug: "owner/app", Polytoken: true}}))
+		Expect(c.UpsertProjectPolytoken("/work/app")).To(BeFalse())
+
+		Expect(c.UpsertProjectPolytoken("/work/other")).To(BeTrue())
+		Expect(c.Projects[1]).To(Equal(config.Project{Path: "/work/other", Polytoken: true}))
+	})
+
+	It("does not use basename lookup when upserting project Polytoken state", func() {
+		c := &config.Config{Projects: []config.Project{{Path: "/one/app", Slug: "owner/one"}}}
+		Expect(c.UpsertProjectPolytoken("/two/app")).To(BeTrue())
+		Expect(c.Projects).To(Equal([]config.Project{
+			{Path: "/one/app", Slug: "owner/one"},
+			{Path: "/two/app", Polytoken: true},
+		}))
+	})
+
+	It("clears project Polytoken state while preserving other metadata", func() {
+		c := &config.Config{Projects: []config.Project{{Path: "/work/app", Slug: "owner/app", Polytoken: true}}}
+		Expect(c.ClearProjectPolytoken("/work/app")).To(BeTrue())
+		Expect(c.Projects).To(Equal([]config.Project{{Path: "/work/app", Slug: "owner/app"}}))
+		Expect(c.ClearProjectPolytoken("/work/app")).To(BeFalse())
+	})
+
+	It("removes a path-only project after clearing Polytoken state", func() {
+		c := &config.Config{Projects: []config.Project{{Path: "/work/app", Polytoken: true}}}
+		Expect(c.ClearProjectPolytoken("/work/app")).To(BeTrue())
+		Expect(c.Projects).To(BeEmpty())
+		Expect(c.ClearProjectPolytoken("/work/app")).To(BeFalse())
+	})
+
+	It("keeps basename Find behavior after exact project installation mutations", func() {
+		c := &config.Config{Projects: []config.Project{{Path: "/work/app"}}}
+		Expect(c.UpsertProjectPolytoken("/work/app")).To(BeTrue())
+		idx, err := c.Find("app")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(idx).To(Equal(0))
+	})
+})
+
+var _ = Describe("project installation mutation paths", func() {
+	It("canonicalizes dot, dot-dot, separators, and symlink aliases", func() {
+		physical := GinkgoT().TempDir()
+		project := filepath.Join(physical, "project")
+		Expect(os.Mkdir(project, 0o750)).To(Succeed())
+		alias := filepath.Join(GinkgoT().TempDir(), "alias")
+		Expect(os.Symlink(project, alias)).To(Succeed())
+
+		got, err := config.CanonicalProjectPath(filepath.Join(alias, ".", "child", "..") + string(os.PathSeparator))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(project))
+	})
+
+	It("fails when the full path cannot be physically resolved", func() {
+		missing := filepath.Join(GinkgoT().TempDir(), "missing")
+		_, err := config.CanonicalProjectPath(missing)
+		Expect(err).To(HaveOccurred())
 	})
 })

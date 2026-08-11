@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,25 +14,87 @@ import (
 	"github.com/geofffranks/herdle/internal/vcs"
 )
 
+type initDependencies struct {
+	getwd                func() (string, error)
+	canonicalProjectPath func(string) (string, error)
+	loadConfig           func() (*config.Config, error)
+	saveConfig           func(*config.Config) error
+}
+
+func defaultInitDependencies() initDependencies {
+	return initDependencies{
+		getwd:                os.Getwd,
+		canonicalProjectPath: config.CanonicalProjectPath,
+		loadConfig:           config.Load,
+		saveConfig:           func(cfg *config.Config) error { return cfg.Save() },
+	}
+}
+
 // initCommand builds the `herdle init` command.
 func initCommand() *cli.Command {
+	return initCommandWithDependencies(defaultInitDependencies())
+}
+
+func initCommandWithDependencies(deps initDependencies) *cli.Command {
 	return &cli.Command{
 		Name:  "init",
 		Usage: "write embedded skills and rules, and seed config",
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{Name: "agent", Usage: "agent harness to configure: claude or polytoken (repeatable)"},
+			&cli.StringFlag{Name: "scope", Value: "global", Usage: "installation scope: global or project"},
 			&cli.BoolFlag{Name: "force", Usage: "overwrite existing skills/rules (use after an upgrade)"},
 			&cli.BoolFlag{Name: "uninstall", Usage: "remove the skills/rules herdle installed"},
 		},
-		Action: initAction,
+		Action: func(c *cli.Context) error { return initAction(c, deps) },
 	}
 }
 
-func initAction(c *cli.Context) error {
+func initAction(c *cli.Context, deps initDependencies) error {
 	selected, err := agent.Parse(c.StringSlice("agent"))
 	if err != nil {
 		return err
 	}
+
+	scope := c.String("scope")
+	if scope != "global" && scope != "project" {
+		return fmt.Errorf("unknown scope %q (expected global or project)", scope)
+	}
+	if scope == "project" {
+		explicitAgents := c.StringSlice("agent")
+		if len(explicitAgents) == 0 || len(selected) != 1 || selected[0] != agent.Polytoken {
+			return errors.New("project scope requires explicit exclusive --agent polytoken")
+		}
+		cwd, err := deps.getwd()
+		if err != nil {
+			return err
+		}
+		if _, err := deps.canonicalProjectPath(cwd); err != nil {
+			return err
+		}
+		return errors.New("project-scoped Polytoken artifacts are not implemented")
+	}
+
+	return initGlobalAction(c, selected)
+}
+
+func updateProjectConfig(path string, uninstall bool, deps initDependencies) error {
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		return err
+	}
+	var changed bool
+	if uninstall {
+		changed = cfg.ClearProjectPolytoken(path)
+	} else {
+		changed = cfg.UpsertProjectPolytoken(path)
+	}
+	if !changed {
+		return nil
+	}
+	return deps.saveConfig(cfg)
+}
+
+func initGlobalAction(c *cli.Context, selected []agent.Name) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err

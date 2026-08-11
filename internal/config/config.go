@@ -30,7 +30,8 @@ type Project struct {
 	GH string `toml:"gh,omitempty"`
 	// Issues overrides source-of-truth issue tracking: nil autodetects (source ⟺ no
 	// upstream remote), true forces on, false forces off. Hand-set in config.toml.
-	Issues *bool `toml:"issues,omitempty"`
+	Issues    *bool `toml:"issues,omitempty"`
+	Polytoken bool  `toml:"polytoken,omitempty"`
 }
 
 // foldLegacyGH migrates a legacy `gh =` slug into the forge-agnostic Slug, in

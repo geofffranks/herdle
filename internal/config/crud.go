@@ -25,6 +25,16 @@ func (e *AmbiguousError) Error() string {
 	return fmt.Sprintf("%q matches multiple projects: %s", e.Name, strings.Join(e.Paths, ", "))
 }
 
+// CanonicalProjectPath resolves a mutation path to its absolute, cleaned,
+// physical identity. Every component must exist and be symlink-resolvable.
+func CanonicalProjectPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(filepath.Clean(absolute))
+}
+
 // Add appends a project, rejecting a duplicate Path. Pure: no filesystem access.
 func (c *Config) Add(p Project) error {
 	for _, e := range c.Projects {
@@ -68,4 +78,43 @@ func (c *Config) Find(key string) (int, error) {
 // Remove deletes the project at idx (caller obtains idx from Find).
 func (c *Config) Remove(idx int) {
 	c.Projects = append(c.Projects[:idx], c.Projects[idx+1:]...)
+}
+
+// UpsertProjectPolytoken enables project-scoped Polytoken state for an exact
+// canonical path. It returns whether the config changed.
+func (c *Config) UpsertProjectPolytoken(path string) bool {
+	for i := range c.Projects {
+		if c.Projects[i].Path != path {
+			continue
+		}
+		if c.Projects[i].Polytoken {
+			return false
+		}
+		c.Projects[i].Polytoken = true
+		return true
+	}
+	c.Projects = append(c.Projects, Project{Path: path, Polytoken: true})
+	return true
+}
+
+// ClearProjectPolytoken disables project-scoped Polytoken state for an exact
+// canonical path. A path-only entry is removed; other project metadata remains.
+// It returns whether the config changed.
+func (c *Config) ClearProjectPolytoken(path string) bool {
+	for i := range c.Projects {
+		if c.Projects[i].Path != path || !c.Projects[i].Polytoken {
+			continue
+		}
+		c.Projects[i].Polytoken = false
+		if c.Projects[i].hasMetadata() {
+			return true
+		}
+		c.Remove(i)
+		return true
+	}
+	return false
+}
+
+func (p Project) hasMetadata() bool {
+	return p.Slug != "" || p.Remote != "" || p.Base != "" || p.Integration != "" || p.GH != "" || p.Issues != nil
 }

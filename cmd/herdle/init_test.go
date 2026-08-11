@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/urfave/cli/v2"
+
+	"github.com/geofffranks/herdle/internal/config"
 )
 
 var _ = Describe("herdle init", func() {
@@ -54,6 +57,19 @@ var _ = Describe("herdle init", func() {
 		buf = &bytes.Buffer{}
 		a := newApp()
 		a.Writer = buf
+		return a
+	}
+
+	appWithInitDeps := func(deps initDependencies) *cli.App {
+		buf = &bytes.Buffer{}
+		a := newApp()
+		a.Writer = buf
+		for i, command := range a.Commands {
+			if command.Name == "init" {
+				a.Commands[i] = initCommandWithDependencies(deps)
+				break
+			}
+		}
 		return a
 	}
 
@@ -184,5 +200,112 @@ var _ = Describe("herdle init", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(skill()).To(BeAnExistingFile())
 		Expect(configFile()).NotTo(BeAnExistingFile())
+	})
+
+	It("keeps explicit global Polytoken behavior", func() {
+		Expect(app.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "global"})).To(Succeed())
+		Expect(polytokenSkill()).To(BeAnExistingFile())
+		Expect(configFile()).To(BeAnExistingFile())
+	})
+
+	DescribeTable("rejects unsupported project scope before path resolution or writes",
+		func(args []string, expected string) {
+			called := false
+			deps := defaultInitDependencies()
+			deps.getwd = func() (string, error) {
+				called = true
+				return "", errors.New("cwd sentinel")
+			}
+			deps.loadConfig = func() (*config.Config, error) {
+				called = true
+				return nil, errors.New("load sentinel")
+			}
+			a := appWithInitDeps(deps)
+			err := a.Run(append([]string{"herdle", "init"}, args...))
+			Expect(err).To(MatchError(expected))
+			Expect(called).To(BeFalse())
+			Expect(filepath.Join(home, ".claude")).NotTo(BeADirectory())
+			Expect(filepath.Join(home, ".config")).NotTo(BeADirectory())
+		},
+		Entry("unknown scope", []string{"--agent", "polytoken", "--scope", "workspace"}, `unknown scope "workspace" (expected global or project)`),
+		Entry("implicit Claude", []string{"--scope", "project"}, `project scope requires explicit exclusive --agent polytoken`),
+		Entry("explicit Claude", []string{"--agent", "claude", "--scope", "project"}, `project scope requires explicit exclusive --agent polytoken`),
+		Entry("multiple agents", []string{"--agent", "polytoken", "--agent", "claude", "--scope", "project"}, `project scope requires explicit exclusive --agent polytoken`),
+	)
+
+	It("accepts repeated explicit Polytoken selection for project scope", func() {
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return GinkgoT().TempDir(), nil }
+		a := appWithInitDeps(deps)
+		err := a.Run([]string{"herdle", "init", "--agent", "polytoken", "--agent", "polytoken", "--scope", "project"})
+		Expect(err).To(MatchError("project-scoped Polytoken artifacts are not implemented"))
+	})
+
+	It("canonicalizes the exact project cwd without seeding config", func() {
+		physical := GinkgoT().TempDir()
+		project := filepath.Join(physical, "project")
+		Expect(os.Mkdir(project, 0o750)).To(Succeed())
+		alias := filepath.Join(GinkgoT().TempDir(), "alias")
+		Expect(os.Symlink(project, alias)).To(Succeed())
+		var canonicalized string
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return filepath.Join(alias, "."), nil }
+		deps.canonicalProjectPath = func(path string) (string, error) {
+			var err error
+			canonicalized, err = config.CanonicalProjectPath(path)
+			return canonicalized, err
+		}
+		a := appWithInitDeps(deps)
+		err := a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})
+		Expect(err).To(MatchError("project-scoped Polytoken artifacts are not implemented"))
+		Expect(canonicalized).To(Equal(project))
+		Expect(configFile()).NotTo(BeAnExistingFile())
+		Expect(polytokenSkill()).NotTo(BeAnExistingFile())
+	})
+
+	It("fails project init before writes when cwd canonicalization fails", func() {
+		deps := defaultInitDependencies()
+		deps.getwd = func() (string, error) { return "/missing", nil }
+		deps.canonicalProjectPath = func(string) (string, error) { return "", errors.New("canonical sentinel") }
+		a := appWithInitDeps(deps)
+		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(MatchError("canonical sentinel"))
+		Expect(configFile()).NotTo(BeAnExistingFile())
+		Expect(polytokenSkill()).NotTo(BeAnExistingFile())
+	})
+
+	Describe("project config persistence", func() {
+		It("upserts and reports injected save failure", func() {
+			cfg := &config.Config{}
+			deps := defaultInitDependencies()
+			deps.loadConfig = func() (*config.Config, error) { return cfg, nil }
+			deps.saveConfig = func(*config.Config) error { return errors.New("save sentinel") }
+			Expect(updateProjectConfig("/work/app", false, deps)).To(MatchError("save sentinel"))
+			Expect(cfg.Projects).To(Equal([]config.Project{{Path: "/work/app", Polytoken: true}}))
+		})
+
+		It("clears metadata-bearing state and saves once", func() {
+			cfg := &config.Config{Projects: []config.Project{{Path: "/work/app", Slug: "owner/app", Polytoken: true}}}
+			saves := 0
+			deps := defaultInitDependencies()
+			deps.loadConfig = func() (*config.Config, error) { return cfg, nil }
+			deps.saveConfig = func(*config.Config) error { saves++; return nil }
+			Expect(updateProjectConfig("/work/app", true, deps)).To(Succeed())
+			Expect(cfg.Projects).To(Equal([]config.Project{{Path: "/work/app", Slug: "owner/app"}}))
+			Expect(saves).To(Equal(1))
+		})
+
+		DescribeTable("unregistered uninstall does not save config",
+			func(cfg *config.Config) {
+				saves := 0
+				deps := defaultInitDependencies()
+				deps.loadConfig = func() (*config.Config, error) { return cfg, nil }
+				deps.saveConfig = func(*config.Config) error { saves++; return nil }
+				Expect(updateProjectConfig("/work/app", true, deps)).To(Succeed())
+				Expect(saves).To(Equal(0))
+			},
+			Entry("empty config", &config.Config{}),
+			Entry("config without exact match", &config.Config{Projects: []config.Project{{Path: "/other/app", Polytoken: true}}}),
+			Entry("matching project without state", &config.Config{Projects: []config.Project{{Path: "/work/app", Slug: "owner/app"}}}),
+		)
 	})
 })

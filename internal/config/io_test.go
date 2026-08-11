@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -46,6 +47,24 @@ var _ = Describe("config IO", func() {
 		got, err := config.Load()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got.DefaultRemote).To(Equal("upstream"))
+		Expect(got.Projects).To(Equal(c.Projects))
+	})
+
+	It("round-trips sparse Polytoken installation state", func() {
+		path := tmpConfig()
+		c := &config.Config{Projects: []config.Project{
+			{Path: "/work/enabled", Polytoken: true},
+			{Path: "/work/disabled"},
+		}}
+		Expect(c.Save()).To(Succeed())
+
+		raw, err := os.ReadFile(path) // #nosec G304 -- test reads the file it just wrote
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(raw)).To(ContainSubstring("polytoken = true"))
+		Expect(strings.Count(string(raw), "polytoken")).To(Equal(1))
+
+		got, err := config.Load()
+		Expect(err).NotTo(HaveOccurred())
 		Expect(got.Projects).To(Equal(c.Projects))
 	})
 

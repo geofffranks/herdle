@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -364,8 +365,14 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		root := writeProject("in-development", completeReview)
 		featureDir := filepath.Join(root, "docs", "superpowers", "her-x-unreadable-feature")
 		Expect(os.MkdirAll(featureDir, 0o750)).To(Succeed())
-		Expect(os.Chmod(featureDir, 0o000)).To(Succeed())
-		defer os.Chmod(featureDir, 0o750)
+		originalReadDir := readDir
+		readDir = func(path string) ([]os.DirEntry, error) {
+			if path == featureDir {
+				return nil, errors.New("injected ReadDir failure")
+			}
+			return originalReadDir(path)
+		}
+		defer func() { readDir = originalReadDir }()
 		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
 		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
 		Expect(d.Allow).To(BeFalse())

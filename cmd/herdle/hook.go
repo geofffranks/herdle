@@ -13,6 +13,8 @@ import (
 	"github.com/geofffranks/herdle/internal/gate"
 )
 
+var readDir = os.ReadDir
+
 // hookCommand is the hidden parent for Claude Code hook handlers.
 func hookCommand() *cli.Command {
 	return &cli.Command{
@@ -242,7 +244,7 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 	allReadable = true
 
 	legacyDir := filepath.Join(superpowers, "validation")
-	if entries, err := os.ReadDir(legacyDir); err == nil {
+	if entries, err := readDir(legacyDir); err == nil {
 		for _, entry := range entries {
 			stem := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
 			if containsHyphenToken(stem, tkid) {
@@ -251,13 +253,13 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 		}
 	}
 
-	if entries, err := os.ReadDir(superpowers); err == nil {
+	if entries, err := readDir(superpowers); err == nil {
 		for _, entry := range entries {
 			if !entry.IsDir() || !strings.HasPrefix(entry.Name(), tkid+"-") {
 				continue
 			}
 			featureDir := filepath.Join(superpowers, entry.Name())
-			files, err := os.ReadDir(featureDir)
+			files, err := readDir(featureDir)
 			if err != nil {
 				allReadable = false
 				continue

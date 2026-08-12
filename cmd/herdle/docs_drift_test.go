@@ -372,6 +372,10 @@ var _ = Describe("docs drift guard", func() {
 				"Legacy four-line Standard/Deep markers remain accepted indefinitely",
 				"New validation documents use only one of the final-integration forms above",
 				"Herdle does not automatically expire or rewrite legacy evidence",
+				"Validation evidence is accepted in either of two layouts",
+				"docs/superpowers/validation/*<tkid>*",
+				"docs/superpowers/<tkid>-*/*validation*",
+				"feature directory must begin with the exact ticket ID followed by a hyphen",
 			} {
 				Expect(corpus).To(ContainSubstring(fact), "missing compatibility contract: %q", fact)
 			}

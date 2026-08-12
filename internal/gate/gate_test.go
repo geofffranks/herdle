@@ -95,6 +95,81 @@ var _ = Describe("HasOverride", func() {
 	})
 })
 
+var _ = Describe("ReviewEvidence marker edge cases", func() {
+	markers := []string{
+		"- [x] Standard review completed",
+		"- [x] Standard review findings addressed",
+		"- [x] Deep review completed",
+		"- [x] Deep review findings addressed",
+	}
+	doc := func(lines []string) string {
+		return "## Herdle code review\n\n" + strings.Join(lines, "\n") + "\n"
+	}
+
+	It("accepts every exact legacy marker once", func() {
+		ev := gate.DocumentReviewEvidence([]string{doc(markers)}, true)
+		Expect(ev.ReadOK).To(BeTrue())
+		Expect(ev.Present["complete-review-contract"]).To(BeTrue())
+	})
+	DescribeTable("rejects a missing marker", func(index int) {
+		lines := append([]string(nil), markers...)
+		lines = append(lines[:index], lines[index+1:]...)
+		ev := gate.DocumentReviewEvidence([]string{doc(lines)}, true)
+		Expect(ev.Present["complete-review-contract"]).To(BeFalse())
+	},
+		Entry("standard completed", 0), Entry("standard addressed", 1),
+		Entry("deep completed", 2), Entry("deep addressed", 3),
+	)
+	DescribeTable("rejects an unchecked marker", func(index int) {
+		lines := append([]string(nil), markers...)
+		lines[index] = strings.Replace(lines[index], "[x]", "[ ]", 1)
+		ev := gate.DocumentReviewEvidence([]string{doc(lines)}, true)
+		Expect(ev.Present["complete-review-contract"]).To(BeFalse())
+	},
+		Entry("standard completed", 0), Entry("standard addressed", 1),
+		Entry("deep completed", 2), Entry("deep addressed", 3),
+	)
+	DescribeTable("rejects an altered marker", func(index int) {
+		lines := append([]string(nil), markers...)
+		lines[index] += "."
+		ev := gate.DocumentReviewEvidence([]string{doc(lines)}, true)
+		Expect(ev.Present["complete-review-contract"]).To(BeFalse())
+	},
+		Entry("standard completed", 0), Entry("standard addressed", 1),
+		Entry("deep completed", 2), Entry("deep addressed", 3),
+	)
+	DescribeTable("rejects a duplicate marker", func(index int) {
+		lines := append([]string(nil), markers...)
+		lines = append(lines, markers[index])
+		ev := gate.DocumentReviewEvidence([]string{doc(lines)}, true)
+		Expect(ev.Present["complete-review-contract"]).To(BeFalse())
+	},
+		Entry("standard completed", 0), Entry("standard addressed", 1),
+		Entry("deep completed", 2), Entry("deep addressed", 3),
+	)
+})
+
+var _ = Describe("ReviewEvidence fence edge cases", func() {
+	clean := "## Herdle code review\n\n" +
+		"- [x] Final integration review completed\n" +
+		"- [x] Final integration review findings addressed\n" +
+		"- [x] Final integration rereview not required\n"
+	allowed := func(document string) bool {
+		ev := gate.DocumentReviewEvidence([]string{document}, true)
+		in := gate.HookInput{ToolName: "Edit", FilePath: "/repo/.tickets/her-x.md", WrittenText: "lifecycle: pending-validation\n"}
+		return gate.Decide(in, gate.Env{Transition: gate.ToPendingValidation, ReviewEvidence: ev}).Allow
+	}
+	It("ignores exact markers inside an indented fence", func() {
+		Expect(allowed("   ```markdown\n" + clean + "   ```\n")).To(BeFalse())
+	})
+	It("ignores exact markers inside nested fences", func() {
+		Expect(allowed("```markdown\n~~~markdown\n" + clean + "~~~\n```\n")).To(BeFalse())
+	})
+	It("ignores exact markers inside a fence with trailing whitespace", func() {
+		Expect(allowed("```markdown\n" + clean + "```   \n")).To(BeFalse())
+	})
+})
+
 var _ = Describe("EffortsFromTranscript", func() {
 	const ticket = "/repo/.tickets/her-5s12.md"
 

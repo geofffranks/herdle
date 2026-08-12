@@ -239,6 +239,7 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 	tkid := strings.TrimSuffix(filepath.Base(absTicket), ".md")
 	superpowers := filepath.Join(root, "docs", "superpowers")
 	var matches []string
+	allReadable = true
 
 	legacyDir := filepath.Join(superpowers, "validation")
 	if entries, err := os.ReadDir(legacyDir); err == nil {
@@ -256,20 +257,22 @@ func readValidationDocs(absTicket string) (docs []string, found, allReadable boo
 				continue
 			}
 			featureDir := filepath.Join(superpowers, entry.Name())
-			if files, err := os.ReadDir(featureDir); err == nil {
-				for _, file := range files {
-					if strings.Contains(file.Name(), "validation") {
-						matches = append(matches, filepath.Join(featureDir, file.Name()))
-					}
+			files, err := os.ReadDir(featureDir)
+			if err != nil {
+				allReadable = false
+				continue
+			}
+			for _, file := range files {
+				if strings.Contains(file.Name(), "validation") {
+					matches = append(matches, filepath.Join(featureDir, file.Name()))
 				}
 			}
 		}
 	}
 
 	if len(matches) == 0 {
-		return nil, false, false
+		return nil, false, allReadable
 	}
-	allReadable = true
 	for _, match := range matches {
 		data, err := os.ReadFile(match) // #nosec G304 -- repo-local validation doc
 		if err != nil {

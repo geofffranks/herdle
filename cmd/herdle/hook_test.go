@@ -360,6 +360,18 @@ var _ = Describe("runGatekeeper Polytoken", func() {
 		Expect(d.Reason).To(ContainSubstring("cannot read a ticket-correlated validation document"))
 	})
 
+	It("fails closed when a correlated feature directory is unreadable even if legacy evidence is complete", func() {
+		root := writeProject("in-development", completeReview)
+		featureDir := filepath.Join(root, "docs", "superpowers", "her-x-unreadable-feature")
+		Expect(os.MkdirAll(featureDir, 0o750)).To(Succeed())
+		Expect(os.Chmod(featureDir, 0o000)).To(Succeed())
+		defer os.Chmod(featureDir, 0o750)
+		payload := `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: pending-validation\n"}}`
+		d := runGatekeeper(strings.NewReader(payload), agent.Polytoken, root)
+		Expect(d.Allow).To(BeFalse())
+		Expect(d.Reason).To(ContainSubstring("cannot read a ticket-correlated validation document"))
+	})
+
 	Describe("validated transition validation-doc readability", func() {
 		const payload = `{"tool_name":"file_edit_search_replace","input":{"path":".tickets/her-x.md","new_string":"lifecycle: validated\n"}}`
 

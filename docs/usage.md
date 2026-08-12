@@ -350,6 +350,11 @@ transitions. It gates three transitions:
 
 - **`lifecycle: pending-validation`** — for a forward transition, record one
   complete supported review contract in a ticket-correlated validation document.
+  Validation evidence is accepted in either of two layouts:
+  `docs/superpowers/validation/*<tkid>*` (the legacy validation directory), or
+  `docs/superpowers/<tkid>-*/*validation*` (a feature directory). The feature
+  directory must begin with the exact ticket ID followed by a hyphen; similarly,
+  legacy filenames must contain the exact ticket ID as a hyphen-delimited token.
   New documents contain one final integration review plus either `rereview not
   required` or completed incremental-rereview evidence; existing legacy
   Standard/Deep evidence remains compatible. A rollback from `validated` or an
@@ -357,9 +362,9 @@ transitions. It gates three transitions:
   Exceptional forward transitions can use the reason-bearing
   `[skip-code-review-gate] <reason>` override.
 - **`lifecycle: validated`** — the ticket must already be at `pending-validation`
-  (monotonic), a validation doc must exist under
-  `docs/superpowers/validation/*<tkid>*`, and every checkbox in it must be
-  checked. Override: `[skip-validation-gate] <reason>`.
+  (monotonic), a validation doc must exist in either accepted layout above, and
+  every checkbox in it must be checked. Override:
+  `[skip-validation-gate] <reason>`.
 - **`lifecycle: in-development`** — the ticket must carry a `branch:` or
   `external-ref:` field (in the edit or already on disk). Override:
   `[skip-branch-linkage] <reason>`.

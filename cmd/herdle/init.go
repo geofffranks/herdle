@@ -22,6 +22,54 @@ type initDependencies struct {
 	saveConfig           func(*config.Config) error
 }
 
+type projectFileSnapshot struct {
+	path   string
+	data   []byte
+	mode   os.FileMode
+	exists bool
+}
+
+func snapshotProjectFiles(paths ...string) ([]projectFileSnapshot, error) {
+	snapshots := make([]projectFileSnapshot, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				snapshots = append(snapshots, projectFileSnapshot{path: path})
+				continue
+			}
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s: expected a regular file", path)
+		}
+		data, err := os.ReadFile(path) // #nosec G304 -- paths are derived from the canonical project layout
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, projectFileSnapshot{path: path, data: data, mode: info.Mode().Perm(), exists: true})
+	}
+	return snapshots, nil
+}
+
+func restoreProjectFiles(snapshots []projectFileSnapshot) error {
+	for _, snapshot := range snapshots {
+		if !snapshot.exists {
+			if err := os.Remove(snapshot.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			continue
+		}
+		if err := os.WriteFile(snapshot.path, snapshot.data, snapshot.mode); err != nil {
+			return err
+		}
+		if err := os.Chmod(snapshot.path, snapshot.mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func defaultInitDependencies() initDependencies {
 	return initDependencies{
 		getwd:                os.Getwd,
@@ -91,6 +139,19 @@ func initProjectAction(c *cli.Context, project string, deps initDependencies) er
 		ContextPath:    filepath.Join(project, "AGENTS.md"),
 		ContextInclude: "@.polytoken/herdle.md",
 	}
+	var snapshots []projectFileSnapshot
+	if !c.Bool("uninstall") {
+		snapshots, err = snapshotProjectFiles(
+			filepath.Join(standalone, "herdle.md"),
+			filepath.Join(standalone, "skills", "herdle-tk-flow", "SKILL.md"),
+			filepath.Join(standalone, "skills", "herdle-tk-artifacts", "SKILL.md"),
+			layout.HooksPath,
+			layout.ContextPath,
+		)
+		if err != nil {
+			return err
+		}
+	}
 	var results []initcmd.Result
 	if c.Bool("uninstall") {
 		results, err = initcmd.UninstallPolytokenLayout(assets.PolytokenFS, layout)
@@ -103,7 +164,13 @@ func initProjectAction(c *cli.Context, project string, deps initDependencies) er
 	if err != nil {
 		return err
 	}
-	return saveProjectConfig(cfg, project, c.Bool("uninstall"), deps)
+	if err := saveProjectConfig(cfg, project, c.Bool("uninstall"), deps); err != nil {
+		if rollbackErr := restoreProjectFiles(snapshots); rollbackErr != nil {
+			return fmt.Errorf("%w (project artifact rollback failed: %v)", err, rollbackErr)
+		}
+		return err
+	}
+	return nil
 }
 
 func updateProjectConfig(path string, uninstall bool, deps initDependencies) error {

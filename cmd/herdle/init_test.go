@@ -372,24 +372,19 @@ var _ = Describe("herdle init", func() {
 		Expect(configFile()).NotTo(BeAnExistingFile())
 	})
 
-	It("reports project config save failure after artifacts and repairs on rerun", func() {
+	It("rolls back project artifacts when config save fails", func() {
 		project := GinkgoT().TempDir()
 		deps := defaultInitDependencies()
 		deps.getwd = func() (string, error) { return project, nil }
 		deps.saveConfig = func(*config.Config) error { return errors.New("save sentinel") }
 		a := appWithInitDeps(deps)
 		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(MatchError("save sentinel"))
-		Expect(filepath.Join(project, ".polytoken", "herdle.md")).To(BeAnExistingFile())
-		Expect(filepath.Join(project, "AGENTS.md")).To(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "herdle.md")).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "skills", "herdle-tk-flow", "SKILL.md")).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "skills", "herdle-tk-artifacts", "SKILL.md")).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(project, ".polytoken", "hooks.json")).NotTo(BeAnExistingFile())
+		Expect(filepath.Join(project, "AGENTS.md")).NotTo(BeAnExistingFile())
 		Expect(configFile()).NotTo(BeAnExistingFile())
-
-		deps = defaultInitDependencies()
-		deps.getwd = func() (string, error) { return project, nil }
-		a = appWithInitDeps(deps)
-		Expect(a.Run([]string{"herdle", "init", "--agent", "polytoken", "--scope", "project"})).To(Succeed())
-		cfg, err := config.Load()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Projects).To(Equal([]config.Project{{Path: project, Polytoken: true}}))
 	})
 
 	DescribeTable("uninstalls registered project Polytoken state",

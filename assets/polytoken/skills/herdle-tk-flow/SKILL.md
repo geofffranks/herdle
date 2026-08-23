@@ -85,7 +85,13 @@ not the place to learn the rule.
 - **→ pending-validation** — after task approvals, complete **one fresh final
   integration review**. Collect all **Critical and Important findings**, address
   them as **one complete fixer batch**, and rereview **only after branch-changing
-  fixes**. Record exactly one matching durable marker form in the validation doc.
+  fixes**. Follow-up rereviews are delta-scoped: record the previous review's
+  commit or document version, inspect only the changes made since that review
+  plus the directly necessary surrounding context. Do not repeat a whole-branch
+  or whole-plan review, and do not reopen unchanged findings unless the new
+  changes materially affect them. Record exactly one matching durable marker form
+  in the
+  validation doc.
 - **→ validated** — the ticket must already be at `pending-validation` (never jump
   straight from in-development), **and** every `- [ ]` in its validation doc must
   be checked. Automated steps you ran get checked off by you; human-only steps stay

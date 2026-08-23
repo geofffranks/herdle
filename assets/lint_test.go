@@ -107,6 +107,18 @@ var _ = Describe("embedded final-integration review contract", func() {
 		}
 	})
 
+	It("requires delta-scoped follow-up rereviews in every embedded harness skill", func() {
+		for _, skill := range allReviewSkills() {
+			semantics := semanticText(skill)
+			Expect(semantics).To(ContainSubstring("Follow-up rereviews are delta-scoped"))
+			Expect(semantics).To(ContainSubstring("previous review"))
+			Expect(semantics).To(ContainSubstring("only the changes made since that review"))
+			Expect(semantics).To(ContainSubstring("directly necessary surrounding context"))
+			Expect(semantics).To(ContainSubstring("Do not repeat a whole-branch or whole-plan review"))
+			Expect(semantics).To(ContainSubstring("do not reopen unchanged findings"))
+		}
+	})
+
 	It("does not teach new documents to emit legacy markers", func() {
 		legacyMarkers := []string{
 			"Standard review completed",

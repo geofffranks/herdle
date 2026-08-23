@@ -70,6 +70,13 @@ requires no branch-changing fixes, record that rereview was not required. If a
 rereview finds Critical or Important issues, collect and fix them as another
 complete batch, then rereview **only after branch-changing fixes**.
 
+**Follow-up rereviews are delta-scoped.** Record the commit or document version
+covered by the previous review. On each rereview, inspect only the changes made
+since that review, plus the directly necessary surrounding context to verify the
+fix and preserve the original requirement. Do not repeat a whole-branch or
+whole-plan review, and do not reopen unchanged findings unless the new changes
+materially affect them.
+
 Keep the Code Review task open until the review, required fixes, and any required
 rereview are complete. The gatekeeper's other transitions have their own
 reason-bearing overrides — `[skip-branch-linkage] <reason>` (in-development) and

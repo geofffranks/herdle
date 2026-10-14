@@ -70,9 +70,9 @@ requires no branch-changing fixes, record that rereview was not required. If a
 rereview finds Critical or Important issues, collect and fix them as another
 complete batch, then rereview **only after branch-changing fixes**.
 
-**Follow-up rereviews are delta-scoped.** Record the commit or document version
-covered by the previous review. On each rereview, inspect only the changes made
-since that review, plus the directly necessary surrounding context to verify the
+**Follow-up rereviews are delta-scoped.** On each rereview, inspect only the changes
+made since the previous review, plus the directly necessary surrounding context to
+verify the
 fix and preserve the original requirement. Do not repeat a whole-branch or
 whole-plan review, and do not reopen unchanged findings unless the new changes
 materially affect them.
@@ -114,28 +114,21 @@ Then:
 
 - Set `lifecycle: pending-validation` only after Code Review is complete and the
   matching durable evidence form is on disk.
-- Structure the validation doc into **automated** and **human** sections. Write a
-  script that exercises as much of the automated section as it can, run it, and
-  check off only the steps it actually covered. **Human-only steps stay `- [ ]`.**
+- Structure the validation doc into **automated** and **human** sections. Run the
+  relevant validation checks and check off only the steps actually covered.
+  **Human-only steps stay `- [ ]`.**
 - Do **not** set `lifecycle: validated` while any box is open. The gatekeeper
   blocks it (and blocks skipping straight from `in-development`). Leave the ticket
   at `pending-validation`; the human checks the remaining boxes, then sets
   `validated`.
-- Fix bugs as needed until the validation script passes.
-- Squash the branch's commits into one.
+- Fix reported defects and rerun affected checks before checking their boxes.
 - Do **not** open a PR here — opening a PR signals validated work. Leave that to
   `superpowers:finishing-a-development-branch`.
 
 ## Defer the plan when implementation won't follow immediately
 
 If a brainstorming → spec cycle finishes but you won't implement right away,
-**stop at the approved spec** instead of writing a plan that will rot. Add a
-**Baseline** section to the spec recording:
-
-- the branch and commit the spec was written against,
-- a ready-to-run `git log <baseline>..<branch> -- <load-bearing paths>` to see
-  what moved, and
-- a checklist of design assumptions to re-verify if those files change.
+**stop at the approved spec** instead of writing a plan that will rot.
 
 Regenerate the plan from the spec at implementation time. Specs describe intent
 and age gracefully; plans reference exact files and line numbers and rot as the

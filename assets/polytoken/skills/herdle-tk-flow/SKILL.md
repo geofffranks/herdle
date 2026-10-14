@@ -85,9 +85,9 @@ not the place to learn the rule.
 - **→ pending-validation** — after task approvals, complete **one fresh final
   integration review**. Collect all **Critical and Important findings**, address
   them as **one complete fixer batch**, and rereview **only after branch-changing
-  fixes**. Follow-up rereviews are delta-scoped: record the previous review's
-  commit or document version, inspect only the changes made since that review
-  plus the directly necessary surrounding context. Do not repeat a whole-branch
+  fixes**. Follow-up rereviews are delta-scoped: inspect only the changes made
+  since the previous review plus the directly necessary surrounding context.
+  Do not repeat a whole-branch
   or whole-plan review, and do not reopen unchanged findings unless the new
   changes materially affect them. Record exactly one matching durable marker form
   in the

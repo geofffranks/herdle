@@ -65,9 +65,9 @@ requires no branch-changing fixes, record that rereview was not required. If a
 rereview finds Critical or Important issues, collect and fix them as another
 complete batch, then rereview **only after branch-changing fixes**.
 
-**Follow-up rereviews are delta-scoped.** Record the commit or document version
-covered by the previous review. On each rereview, inspect only the changes made
-since that review, plus the directly necessary surrounding context to verify the
+**Follow-up rereviews are delta-scoped.** On each rereview, inspect only the changes
+made since the previous review, plus the directly necessary surrounding context to
+verify the
 fix and preserve the original requirement. Do not repeat a whole-branch or
 whole-plan review, and do not reopen unchanged findings unless the new changes
 materially affect them.
@@ -105,12 +105,8 @@ When branch-changing fixes were made and final integration rereview completed:
 Then:
 
 - add concrete **automated** and **human** validation sections;
-- dispatch the `validator` subagent (defined in
-  `~/.config/polytoken/subagents/validator.md`) with the validation-document
-  path. It runs each validation item, captures command output as evidence, and
-  returns `pass` / `fail` / `partial`. Mark only the steps its run actually
-  covered. If it reports `fail` or `partial`, fix the defects and re-dispatch
-  before checking the corresponding boxes;
+- run the relevant validation checks and mark only the steps actually covered.
+  Fix reported defects and rerun affected checks before checking their boxes;
 - leave human-only steps unchecked;
 - only after Code Review is complete and the matching durable evidence form is
   on disk, set `lifecycle: pending-validation`;
@@ -126,7 +122,5 @@ exceptional escape hatches, not routine workflow.
 ## Defer plans that will not be implemented immediately
 
 If a brainstorming-to-spec cycle finishes but implementation will wait, stop at
-the approved spec. Add a **Baseline** section recording the branch and commit, a
-ready-to-run `git log <baseline>..<branch> -- <load-bearing paths>`, and design
-assumptions to re-check if those paths change. Regenerate the plan at
-implementation time rather than letting file-specific instructions rot.
+the approved spec. Regenerate the plan at implementation time rather than letting
+file-specific instructions rot.
